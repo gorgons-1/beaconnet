@@ -125,3 +125,21 @@ jobs:
           # The release is created by hand right after the tag is pushed; wait for it.
           for i in $(seq 40); do gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break; sleep 15; done
           gh release upload "$GITHUB_REF_NAME" "${{ matrix.asset }}" --clobber
+
+  # Last, and only if all three builds made it: BeaconNet-version.txt tells installed apps
+  # that this release's downloads are ready (the app's update check reads it).
+  version-file:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Attach BeaconNet-version.txt
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          v=$(sed -n 's/^VERSION = "\([0-9.]*\)"$/\1/p' clients/desktop/beaconnet_desktop.py)
+          [[ "$v" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "can't read the app version"; exit 1; }
+          printf '%s\n' "$v" > BeaconNet-version.txt
+          gh release upload "$GITHUB_REF_NAME" BeaconNet-version.txt --clobber
+          echo "BeaconNet Desktop $v"

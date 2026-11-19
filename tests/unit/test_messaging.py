@@ -253,3 +253,14 @@ def test_forty_column_reflow_and_ascii():
     assert to_ascii("Café ‘q’ — £5 中") == "Cafe 'q' - L5 ?"
     t.set_width(80, fixed=True)
     assert cols() == 80 and t.fit("a " * 60).count("\n") == 0
+
+
+def test_reply_subjects_keep_one_re(ssh_api, active_user, bob):
+    from bbs_core.service import tidy_subject
+    assert tidy_subject("Re: Re: RE:  test") == "Re: test"
+    assert tidy_subject("re[2]: Re: net") == "Re: net"
+    assert tidy_subject("Repeater news") == "Repeater news" and tidy_subject("Re:") == "Re:"
+    _, _, alice = active_user
+    r = ssh_api.call("POST", "/v1/mail", alice, json={"to": "bob", "subject": "Re: Re: Re: test", "body": "x"})
+    assert r.status_code == 200
+    assert ssh_api.call("GET", f"/v1/mail/{r.json()['id']}", alice).json()["subject"] == "Re: test"

@@ -2,6 +2,19 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.9.0 - conversations and app updates
+
+* BeaconNet Desktop 1.4.0:
+  * **Mail is grouped into conversations**: one line per person and subject, including
+    your own replies, opening to the whole exchange in order.
+  * **Update check**: twice a day it reads the latest release's `BeaconNet-version.txt`
+    and, when a newer app is ready, shows a banner (Download update / What's new / Not
+    now) and a desktop notification. Settings > App updates: Check now, or turn it off.
+* Subjects no longer pile up as "Re: Re: Re:". The node keeps a single "Re:" on mail and
+  bulletins, whichever client sent them.
+* Releases attach `BeaconNet-version.txt` after all three downloads, so the app only
+  announces an update that can be downloaded.
+
 ## 1.8.2 - desktop picks up node renames
 
 * BeaconNet Desktop 1.3.1 re-reads the node's name and id every few minutes, so a

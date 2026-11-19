@@ -3,3 +3,4 @@ asyncssh==2.19.0
 pystray==0.19.5
 pillow==11.0.0
 pyinstaller==6.11.1
+certifi==2024.8.30

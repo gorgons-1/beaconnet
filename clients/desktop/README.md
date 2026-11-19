@@ -67,6 +67,21 @@ stored.
 Your account needs a password for that first login. If you registered with a key, log
 in to the BBS once and set one under *My Account & Keys > P*.
 
+## Mail
+
+**Mail** shows one line per conversation, like a mail program: everything you and the
+other person wrote under the same subject (however many times it was answered), newest
+conversation first. Click it to read the whole exchange in order and reply. **Sent** and
+**Archive** list single messages. **Members** lists everyone on the node you can write to.
+
+## Updates
+
+The app checks GitHub twice a day for a newer version (it asks only "what's the latest
+version?" and sends nothing about you). When there is one, a banner offers **Download
+update**; quit BeaconNet from the tray icon, then open the new one. Your login and settings
+are kept. **Not now** hides that version; **Settings > App updates** has **Check now** and
+can turn automatic checks off.
+
 ## Packet radio (coming with Phase 3)
 
 Settings > Connection has a **Packet radio** option for when your BBS is reachable only

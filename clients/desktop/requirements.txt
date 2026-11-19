@@ -2,3 +2,4 @@
 asyncssh>=2.14,<3
 pystray>=0.19     # optional: tray / menu-bar icon
 pillow>=10        # optional: draws the tray icon
+certifi           # HTTPS certificates for the update check (macOS needs it)

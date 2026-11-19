@@ -315,3 +315,45 @@ async def test_desktop_picks_up_node_rename_while_connected(gateways, bbs, admin
         await app.check()
     assert old != "Oban Packet Radio BBS" and app.info["node_name"] == "Oban Packet Radio BBS"
     app.link.close()
+
+
+async def test_desktop_update_check(tmp_path, monkeypatch):
+    desk = load_desktop()
+    popped, opened = [], []
+    app = desk.App(desk.Settings(tmp_path), notify=lambda t, b: popped.append(t))
+    web = desk.Web(app, 8765)
+    monkeypatch.setattr(desk.webbrowser, "open", opened.append)
+    major, minor, patch = desk.version_tuple(desk.VERSION)
+
+    app.fetch_version = lambda: desk.VERSION                        # up to date
+    await app.check_update()
+    assert app.update is None and popped == [] and app.state(0)["update"] is None
+
+    newer = f"{major}.{minor + 1}.0"
+    app.fetch_version = lambda: newer
+    await app.check_update()
+    st = app.state(0)
+    assert st["update"]["version"] == newer and st["update"]["skipped"] is False
+    assert st["update"]["download"].startswith(desk.RELEASES + "/download/BeaconNet-")
+    assert popped == [f"BeaconNet Desktop {newer} is available"]
+    await app.check_update()                                         # same news: no second pop-up
+    assert len(popped) == 1
+
+    await web.api("POST", "/api/update/open", {"what": "download"})
+    await web.api("POST", "/api/update/open", {"what": "https://evil.example/"})   # never a page-supplied URL
+    assert opened == [st["update"]["download"]]
+    await web.api("POST", "/api/update/skip", {})                     # "Not now" hides this version
+    assert app.state(0)["update"]["skipped"] is True
+    st = await web.api("POST", "/api/update/check", {})               # checking by hand shows it again
+    assert st["update"]["skipped"] is False
+
+    def offline():
+        raise OSError("no route")
+    app.fetch_version = offline
+    await app.check_update()
+    assert "Couldn't check" in app.state(0)["update_error"] and app.update is not None
+    await web.api("POST", "/api/update/auto", {"on": False})
+    assert app.s["check_updates"] is False
+    app.update_checked = 0
+    app._maybe_check_update()
+    assert app._update_task is None                                  # automatic checks really off

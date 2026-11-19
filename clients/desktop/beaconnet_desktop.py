@@ -26,7 +26,9 @@ import secrets
 import shutil
 import subprocess
 import sys
+import ssl
 import time
+import urllib.request
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -36,10 +38,43 @@ try:
 except ImportError:  # pragma: no cover - the launchers install it
     sys.exit("BeaconNet Desktop needs the 'asyncssh' package:  python -m pip install --user asyncssh")
 
-VERSION = "1.3.1"
+VERSION = "1.4.0"
 SUBSYSTEM = "beaconnet-client"
 POLL_SECONDS = 30
 INFO_REFRESH_CHECKS = 10            # re-read node name/id every ~5 minutes
+# Updates: each GitHub release carries BeaconNet-version.txt (this app's version in that
+# release), attached only after all three downloads are, so "newer" always means "ready".
+RELEASES = "https://github.com/gorgons-1/beaconnet/releases/latest"
+UPDATE_CHECK_HOURS = 12
+VERSION_RE = re.compile(r"^\d{1,4}\.\d{1,4}\.\d{1,4}$")
+
+
+def version_tuple(v: str) -> tuple[int, ...]:
+    return tuple(int(x) for x in v.split("."))
+
+
+def platform_asset() -> str:
+    if sys.platform == "win32":
+        return "BeaconNet-Windows.zip"
+    if sys.platform == "darwin":
+        return "BeaconNet-macOS.zip"
+    return "BeaconNet-Linux-x86_64.tar.gz"
+
+
+def fetch_latest_version(timeout: float = 15) -> str:
+    """Blocking: read the latest release's BeaconNet-version.txt (a few bytes, over HTTPS)."""
+    try:
+        import certifi  # bundled in the apps; macOS Python has no system CA store
+        ctx = ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        ctx = ssl.create_default_context()
+    req = urllib.request.Request(f"{RELEASES}/download/BeaconNet-version.txt",
+                                 headers={"User-Agent": f"BeaconNet-Desktop/{VERSION}"})
+    with urllib.request.urlopen(req, timeout=timeout, context=ctx) as r:  # noqa: S310 - fixed https URL
+        v = r.read(64).decode("ascii", "replace").strip()
+    if not VERSION_RE.match(v):
+        raise ValueError("unexpected version file")
+    return v
 
 
 # --- settings ---------------------------------------------------------------------------
@@ -72,7 +107,9 @@ class Settings:
                                 "notify_bulletins": True, "notify_emergency": True, "notify_mail": True,
                                 "notify_registrations": True,
                                 # Radio mode (Phase 3): saved now, used once nodes answer on packet radio.
-                                "connection": "internet", "radio": {}}
+                                "connection": "internet", "radio": {},
+                                # App updates: check GitHub twice a day; "Not now" hides one version.
+                                "check_updates": True, "skipped_version": None}
 
     def __init__(self, home: Path) -> None:
         self.home = home
@@ -273,6 +310,11 @@ class App:
         self.password: str | None = None    # memory only, until a device key exists
         self.wake = asyncio.Event()
         self.checks = 0                     # first check after start lists mail/registrations quietly
+        self.update: dict | None = None     # {"version", "download", "notes"} when a newer app exists
+        self.update_error = ""
+        self.update_checked = 0.0
+        self.fetch_version = fetch_latest_version
+        self._update_task: asyncio.Task | None = None
 
     # -- connect ----------------------------------------------------------------------
 
@@ -378,9 +420,35 @@ class App:
         if self.checks % INFO_REFRESH_CHECKS == 0:   # the node can be renamed while we stay connected
             self.info = (await self.link.call("hello"))["info"]
 
+    # -- app updates ----------------------------------------------------------------------
+
+    async def check_update(self) -> None:
+        self.update_checked = time.time()
+        try:
+            latest = await asyncio.to_thread(self.fetch_version)
+        except Exception as exc:  # no internet, GitHub down, proxy... try again later
+            self.update_error = f"Couldn't check for updates ({exc.__class__.__name__}). Is this computer online?"
+            return
+        self.update_error = ""
+        if version_tuple(latest) <= version_tuple(VERSION):
+            self.update = None
+            return
+        new = self.update is None or self.update["version"] != latest
+        self.update = {"version": latest, "download": f"{RELEASES}/download/{platform_asset()}", "notes": RELEASES}
+        if new and latest != self.s["skipped_version"]:
+            self._event("update", f"BeaconNet Desktop {latest} is available",
+                        f"You have {VERSION}. Open BeaconNet to update.")
+
+    def _maybe_check_update(self) -> None:
+        due = time.time() - self.update_checked > UPDATE_CHECK_HOURS * 3600
+        busy = self._update_task is not None and not self._update_task.done()
+        if self.s["check_updates"] and due and not busy:
+            self._update_task = asyncio.ensure_future(self.check_update())
+
     async def run(self) -> None:
         backoff = 5
         while True:
+            self._maybe_check_update()
             try:
                 if self.s["connection"] == "radio":
                     if self.link:
@@ -436,6 +504,9 @@ class App:
             "events": [e for e in self.events if e["seq"] > since],
             "notify": {k: s[k] for k in ("notify_bulletins", "notify_emergency", "notify_mail", "notify_registrations")},
             "connection": s["connection"], "radio": {**RADIO_DEFAULTS, **(s["radio"] or {})},
+            "update": self.update and {**self.update, "skipped": self.update["version"] == s["skipped_version"]},
+            "update_error": self.update_error, "check_updates": s["check_updates"],
+            "update_checked": time.strftime("%d %b %H:%M", time.localtime(self.update_checked)) if self.update_checked else None,
         }
 
 
@@ -516,6 +587,22 @@ class Web:
             return app.state(0)
         if path == "/api/notify":
             app.s.update(**{k: bool(v) for k, v in d.items() if k in Settings.DEFAULTS and k.startswith("notify_")})
+            return {"ok": True}
+        if path == "/api/update/check":            # asking by hand also un-hides a skipped version
+            app.s.update(skipped_version=None)
+            await app.check_update()
+            return app.state(0)
+        if path == "/api/update/auto":
+            app.s.update(check_updates=bool(d.get("on")))
+            return app.state(0)
+        if path == "/api/update/skip":
+            if app.update:
+                app.s.update(skipped_version=app.update["version"])
+            return app.state(0)
+        if path == "/api/update/open":
+            # Only ever opens our own release links, never a URL from the page.
+            if app.update and d.get("what") in ("download", "notes"):
+                webbrowser.open(app.update[d["what"]])
             return {"ok": True}
         if path == "/api/refresh":
             app.wake.set()

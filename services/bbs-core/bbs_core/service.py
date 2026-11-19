@@ -95,6 +95,18 @@ class Principal:
         return self.username or "guest"
 
 
+_RE_PREFIXES = re.compile(r"^(\s*re\s*(\[\d+\])?\s*:\s*)+", re.IGNORECASE)
+
+
+def tidy_subject(subject: str) -> str:
+    """'Re: Re: RE: test' -> 'Re: test': replies keep one Re:, however many times answered."""
+    m = _RE_PREFIXES.match(subject)
+    if not m:
+        return subject
+    rest = subject[m.end():].strip()
+    return f"Re: {rest}" if rest else subject
+
+
 def new_mid(node_id: str) -> str:
     return f"{uuid.uuid4().hex}@{node_id}"
 
@@ -681,7 +693,7 @@ class BBS:
         if not who.is_active:
             raise BBSError("forbidden", "posting needs an approved account" if who.user_id else "guests cannot post")
         mc = self.cfg.messages
-        subject = sanitize_line(data.get("subject", ""), mc.subject_max)
+        subject = tidy_subject(sanitize_line(data.get("subject", ""), mc.subject_max))
         body = sanitize_body(data.get("body", ""), mc.body_max_bytes)
         if not subject:
             raise BBSError("invalid_input", "a subject is required")
@@ -845,7 +857,7 @@ class BBS:
         self._need_active(who)
         mc = self.cfg.messages
         to = sanitize_line(data.get("to", ""), 64)
-        subject = sanitize_line(data.get("subject", ""), mc.subject_max)
+        subject = tidy_subject(sanitize_line(data.get("subject", ""), mc.subject_max))
         body = sanitize_body(data.get("body", ""), mc.body_max_bytes)
         if not to or not subject or not body:
             raise BBSError("invalid_input", "recipient, subject and message are all required")

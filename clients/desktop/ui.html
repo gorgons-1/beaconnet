@@ -13,6 +13,8 @@ header h1{font-size:17px;margin:0;letter-spacing:.5px}header .node{color:var(--m
 .dot{width:9px;height:9px;border-radius:50%;background:var(--mute);display:inline-block;margin-right:6px}.dot.on{background:var(--ok)}.dot.off{background:var(--emer)}
 nav{display:flex;gap:4px;padding:8px 16px;flex-wrap:wrap}nav button{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit}
 nav button.sel{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}nav .badge{background:var(--emer);color:#fff;border-radius:9px;padding:0 6px;font-size:12px;margin-left:4px}
+.msg{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}.msg pre{margin:6px 0 4px}
+#upd .panel{max-width:948px;margin:10px auto;border-color:var(--accent)}#upd .panel b{color:var(--accent)}
 main{max-width:980px;margin:0 auto;padding:8px 16px 40px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin:10px 0}
 .row{display:flex;gap:10px;align-items:baseline;padding:8px 6px;border-bottom:1px solid var(--line);cursor:pointer}.row:last-child{border-bottom:0}.row:hover{background:color-mix(in srgb,var(--accent) 7%,transparent)}
 .row .n{color:var(--mute);font-variant-numeric:tabular-nums;min-width:48px}.row .s{flex:1;min-width:0;overflow-wrap:anywhere}.row .m{color:var(--mute);font-size:13px;white-space:nowrap}
@@ -29,6 +31,7 @@ button.plain{background:none;border:1px solid var(--line);color:var(--ink);borde
 <body>
 <header><h1>BEACONNET</h1><span class="node" id="node"></span><span style="flex:1"></span><span id="conn" class="mute"><span class="dot"></span>…</span></header>
 <nav id="tabs"></nav>
+<div id="upd"></div>
 <main id="main"></main>
 <script>
 "use strict";
@@ -57,7 +60,50 @@ async function poll() {
     if (was !== S.status + "/" + S.sysop || (tab === "news" && st.events.length)) render();
   } catch (e) { S.status = "app stopped"; head(); }
 }
+const RE_PREFIX = /^\s*((re|fwd?|aw|sv)\s*(\[\d+\])?\s*:\s*)+/i;
+function baseSubject(subj) { return (subj || "").replace(RE_PREFIX, "").trim() || "(no subject)"; }
+function reSubject(subj) { return ("Re: " + baseSubject(subj)).slice(0, 80); }
+function threadsOf(msgs) {
+  const by = new Map();
+  for (const m of msgs) {
+    const other = m.folder === "inbox" ? m.from : m.to;
+    const key = String(other || "").toLowerCase() + "\n" + baseSubject(m.subject).toLowerCase();
+    if (!by.has(key)) by.set(key, {other, subject: baseSubject(m.subject), msgs: []});
+    const t = by.get(key);
+    if (!t.msgs.some(x => x.id === m.id)) t.msgs.push(m);
+  }
+  const out = [...by.values()];
+  for (const t of out) { t.msgs.sort((a, b) => a.id - b.id); t.last = t.msgs[t.msgs.length - 1]; t.unread = t.msgs.some(m => m.folder === "inbox" && !m.read); }
+  return out.sort((a, b) => b.last.id - a.last.id);
+}
+async function openThread(t, folder = "inbox") {
+  const main = document.getElementById("main");
+  try {
+    const full = [];
+    for (const m of t.msgs) full.push(await call("mail_get", {mail_id: m.id}));   // also marks them read
+    const parts = full.map(m => $("div", {class: "msg"},
+      $("div", {class: "mute"}, $("b", {}, m.folder === "sent" ? "You" : m.from), ` · ${when(m.created_at)}${m.folder === "sent" && m.delivery_state && m.delivery_state !== "DELIVERED" ? " · " + m.delivery_state : ""}`),
+      $("pre", {}, m.body)));
+    const last = full[full.length - 1];
+    main.replaceChildren(panel($("h3", {}, t.subject),
+      $("div", {class: "mute"}, `Conversation with ${t.other}` + (full.length > 1 ? ` · ${full.length} messages` : "")),
+      ...parts,
+      $("button", {class: "go", on: {click: () => compose({to: t.other, subject: reSubject(t.subject), reply_to: last.id})}}, "Reply"), " ",
+      $("button", {class: "plain", on: {click: () => render({folder})}}, "Back")));
+    poll();
+  } catch (e) { main.replaceChildren(panel(errBox(e))); }
+}
+function updateBanner() {
+  const u = S.update, box = document.getElementById("upd");
+  if (!u || u.skipped) { box.replaceChildren(); return; }
+  box.replaceChildren(panel($("b", {}, `Update available: BeaconNet Desktop ${u.version}`), ` (you have ${S.version}). `,
+    $("span", {class: "mute"}, "Download it, quit BeaconNet from the tray icon, then open the new one. Your login and settings are kept."), $("br"),
+    $("button", {class: "go", on: {click: () => api("/api/update/open", {what: "download"})}}, "Download update"), " ",
+    $("button", {class: "plain", on: {click: () => api("/api/update/open", {what: "notes"})}}, "What's new"),
+    $("button", {class: "plain", on: {click: async () => { await api("/api/update/skip"); await poll(); }}}, "Not now")));
+}
 function head() {
+  updateBanner();
   const on = S.status === "connected";
   document.getElementById("node").textContent = S.node && S.node.node_id ? `${S.node.node_name || ""} · ${S.node.node_id}` : "";
   const c = document.getElementById("conn"); c.replaceChildren($("span", {class: "dot " + (on ? "on" : "off")}), on ? `${S.username}${S.sysop ? " (sysop)" : ""}` : S.status);
@@ -89,7 +135,7 @@ async function openMsg(n) {
   const body = [$("h3", {}, ...(m.priority && m.priority !== "ROUTINE" ? [$("span", {class: "tag"}, m.priority)] : []), m.subject),
     $("div", {class: "mute"}, `#${m.number} on ${m.board} · from ${m.callsign || m.author}${m.origin_node ? " @" + m.origin_node : ""} · ${when(m.created_at)}${m.area ? " · area: " + m.area : ""}`),
     $("pre", {}, m.body), $("button", {class: "plain", on: {click: () => render()}}, "Back")];
-  if (S.me && S.me.can_post) body.push($("button", {class: "plain", on: {click: () => { tab = "post"; head(); render({board: m.board, reply_to: m.number, subject: "Re: " + m.subject}); }}}, "Reply"));
+  if (S.me && S.me.can_post) body.push($("button", {class: "plain", on: {click: () => { tab = "post"; head(); render({board: m.board, reply_to: m.number, subject: reSubject(m.subject)}); }}}, "Reply"));
   document.getElementById("main").replaceChildren(panel(...body));
 }
 const VIEWS = {
@@ -115,17 +161,23 @@ const VIEWS = {
   async mail(x) {
     if (!S.me.can_mail) return [panel("Private mail opens once a sysop approves your account.")];
     const folder = (x && x.folder) || "inbox";
-    const r = await call("mail", {folder, limit: 50});
-    const tabs = ["inbox", "sent", "archive"].map(f => $("button", {class: "plain", on: {click: () => render({folder: f})}}, f === folder ? "▸ " + f : f));
-    const rows = r.messages.map(m => $("div", {class: "row" + (m.read || folder !== "inbox" ? "" : " unread"), on: {click: async () => {
-      const full = await call("mail_get", {mail_id: m.id});
-      document.getElementById("main").replaceChildren(panel($("h3", {}, full.subject), $("div", {class: "mute"}, `from ${full.from} to ${full.to} · ${when(full.created_at)}${full.delivery_state ? " · " + full.delivery_state : ""}`),
-        $("pre", {}, full.body), $("button", {class: "plain", on: {click: () => render({folder})}}, "Back"),
-        $("button", {class: "plain", on: {click: () => compose({to: full.folder === "inbox" ? full.from : full.to, subject: "Re: " + full.subject, reply_to: full.id})}}, "Reply")));
-      poll();
-    }}}, $("span", {class: "n"}, ""), $("span", {class: "s"}, m.subject), $("span", {class: "m"}, `${folder === "sent" ? "to " + m.to : m.from} · ${when(m.created_at)}`)));
+    const label = {inbox: "conversations", sent: "sent", archive: "archive"};
+    const tabs = ["inbox", "sent", "archive"].map(f => $("button", {class: "plain", on: {click: () => render({folder: f})}}, f === folder ? "▸ " + label[f] : label[f]));
+    let rows;
+    if (folder === "inbox") {
+      // Like a mail program: one row per conversation (same person, same subject without the
+      // "Re:"s), including your own replies, newest conversation first.
+      const inbox = await call("mail", {folder: "inbox", limit: 50}), sent = await call("mail", {folder: "sent", limit: 50});
+      rows = threadsOf([...inbox.messages, ...sent.messages]).map(t => $("div", {class: "row" + (t.unread ? " unread" : ""), on: {click: () => openThread(t)}},
+        $("span", {class: "n"}, t.msgs.length > 1 ? String(t.msgs.length) : ""), $("span", {class: "s"}, t.subject),
+        $("span", {class: "m"}, `${t.other} · ${when(t.last.created_at)}`)));
+    } else {
+      const r = await call("mail", {folder, limit: 50});
+      rows = r.messages.map(m => $("div", {class: "row", on: {click: () => openThread({other: m.folder === "inbox" ? m.from : m.to, subject: baseSubject(m.subject), msgs: [m], last: m}, folder)}},
+        $("span", {class: "n"}, ""), $("span", {class: "s"}, m.subject), $("span", {class: "m"}, `${m.folder === "sent" ? "to " + m.to : m.from} · ${when(m.created_at)}`)));
+    }
     const tabs2 = [...tabs, $("button", {class: "plain", on: {click: () => members()}}, "Members")];
-    return [panel(...tabs2, $("button", {class: "go", style: "float:right;margin-top:0", on: {click: () => compose({})}}, "New message")), panel(...(rows.length ? rows : [$("div", {class: "mute"}, "Empty.")]))];
+    return [panel(...tabs2, $("button", {class: "go", style: "float:right;margin-top:0", on: {click: () => compose({})}}, "New message")), panel(...(rows.length ? rows : [$("div", {class: "mute"}, folder === "inbox" ? "No mail yet." : "Empty.")]))];
   },
   async post(x) {
     if (!S.me.can_post) return [panel("Posting opens once a sysop approves your account.")];
@@ -207,10 +259,22 @@ const VIEWS = {
     const pick = (v, label) => { const r = $("input", {type: "radio", name: "conn", value: v}); r.checked = mode === v;
       r.addEventListener("change", async () => { if (v === "internet") { await api("/api/connection", {connection: "internet"}); await poll(); } S.connection = v; render(); }); return $("label", {class: "chk"}, r, label); };
     const top = panel($("h3", {}, "Connection"), $("div", {class: "grid"}, pick("internet", "Internet / Wi-Fi (SSH to the node)"), pick("radio", "Packet radio (AX.25)")));
-    if (mode === "radio") return [top, ...radioSettings()];
-    return [top, ...await internetSettings()];
+    return [top, ...(mode === "radio" ? radioSettings() : await internetSettings()), updateSettings()];
   },
 };
+function updateSettings() {
+  const auto = $("input", {type: "checkbox"}); auto.checked = S.check_updates !== false;
+  auto.addEventListener("change", async () => { await api("/api/update/auto", {on: auto.checked}); await poll(); });
+  const msg = $("div", {});
+  const now = $("button", {class: "plain", on: {click: async () => {
+    msg.replaceChildren($("span", {class: "mute"}, "Checking…"));
+    try { S = {...S, ...await api("/api/update/check")}; head();
+      msg.replaceChildren(S.update_error ? errBox({message: S.update_error}) : S.update ? `BeaconNet Desktop ${S.update.version} is available - see the banner at the top.` : "You have the latest version.");
+    } catch (e) { msg.replaceChildren(errBox(e)); }
+  }}}, "Check now");
+  return panel($("h3", {}, "App updates"), $("div", {}, `BeaconNet Desktop ${S.version}`, S.update_checked ? $("span", {class: "mute"}, ` · last checked ${S.update_checked}`) : ""),
+    $("label", {class: "chk"}, auto, "Check for updates automatically (asks GitHub twice a day; nothing about you is sent)"), now, msg);
+}
 function radioSettings() {
   const r = S.radio || {};
   const inp = (v, attrs = {}) => $("input", {value: v ?? "", ...attrs});
