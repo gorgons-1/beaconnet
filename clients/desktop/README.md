@@ -1,5 +1,9 @@
 # BeaconNet Desktop
 
+**Download:** [Windows](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-Windows.zip) ·
+[macOS](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-macOS.zip) · [Linux](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-Linux-x86_64.tar.gz)
+(always the newest release; no account needed)
+
 A small app for your own computer (Windows, macOS or Linux). It sits in the background,
 keeps an encrypted connection to your BeaconNet node, and **pops up a notification**
 when something arrives:

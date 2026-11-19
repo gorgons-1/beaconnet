@@ -40,6 +40,8 @@ runs on Windows, macOS and Linux. It pops up a notification for new bulletins,
 EMERGENCY traffic, mail and (for sysops) registrations, and gives you a browser page to
 read, post, send mail and approve users.
 
+**Download:** [Windows](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-Windows.zip) · [macOS](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-macOS.zip) · [Linux](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-Linux-x86_64.tar.gz) (more in [clients](clients/README.md))
+
 ## Install a node
 
 You need:
