@@ -879,6 +879,18 @@ class BBS:
         event(log, "mail_sent", sender=who.username, recipient=rcpt["username"], id=cur.lastrowid)
         return {"id": cur.lastrowid, "to": rcpt["username"], "delivery_state": "DELIVERED"}
 
+    def directory(self, who: Principal) -> dict:
+        """Members you can send private mail to on this node: approved accounts only.
+        Contact details are never listed, and a callsign shows only once a sysop verified it."""
+        self._need_active(who, "the member list")
+        with self.db.session() as conn:
+            rows = conn.execute(
+                "SELECT username, display_name, CASE WHEN callsign_verified = 1 THEN callsign END AS callsign, role"
+                " FROM users WHERE status = 'ACTIVE' ORDER BY username LIMIT 2000").fetchall()
+        return {"node": self.cfg.node.id,
+                "users": [{"username": r["username"], "display_name": r["display_name"], "callsign": r["callsign"],
+                           "sysop": r["role"] == "admin", "you": r["username"] == who.username} for r in rows]}
+
     def _mail_remote(self, who: Principal, user: str, node: str, subject: str, body: str) -> dict:
         from .mesh import NODE_RE
         if not USER_RE.match(user) or not NODE_RE.match(node):

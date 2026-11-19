@@ -327,3 +327,30 @@ async def test_escape_sequences_not_relayed(gateways, admin_key, bbs):
     assert "\x1b" not in screen and "\x07" not in screen
     assert "red" in screen and "owned" in screen
     await g.close()
+
+
+async def test_member_list_in_mail(gateways, admin_key, active_user, bbs):
+    ssh_port, _, _ = gateways
+    t = await connect(ssh_port, "sysop1", admin_key)
+    await t.expect("Selection:")
+    t.send("5")
+    await t.expect("M=members")
+    t.send("M")
+    screen = await t.expect("Write to")
+    assert "alice" in screen and "Members on" in screen
+    t.send("")
+    await t.expect("M=members")
+    t.send("C")
+    await t.expect("? for the member list")
+    t.send("?")
+    screen = await t.expect("? for the member list")
+    assert "alice" in screen
+    t.send("alice")
+    await t.expect("Subject:")
+    t.send("Hello from the list")
+    await t.expect("/EX")
+    t.send("hi alice")
+    t.send("/EX")
+    screen = await t.expect("M=members")
+    assert "Sent to alice" in screen
+    await t.close()

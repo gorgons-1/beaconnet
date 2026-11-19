@@ -2,6 +2,16 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.7.0 - member list for mail
+
+* Approved users can see who they can send private mail to on the node: username,
+  display name and (once a sysop has verified it) callsign. Contact details are never
+  listed, and pending, suspended or rejected accounts don't appear.
+  * BeaconNet Desktop 1.3.0: **Mail > Members** (search, click someone to write to
+    them), and the *To* box on a new message suggests members as you type.
+  * BBS: *Private Mail > M* lists members; type `?` at the *To* prompt to see them.
+  * API: `GET /v1/directory` (client op `directory`).
+
 ## 1.6.0 - radio settings (Phase 3 pre-stage)
 
 * Packet radio settings can be filled in ahead of Phase 3. Nothing transmits yet.

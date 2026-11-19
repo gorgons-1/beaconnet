@@ -15,7 +15,7 @@ when something arrives:
 * new registrations waiting for approval (sysops only)
 
 It also gives you a page in your browser, at `http://127.0.0.1:8765`, where you can read
-the boards, post, read and send mail, and, if you're a sysop on the node's local network,
+the boards, post, read and send mail (pick who to write to from the node's member list), and, if you're a sysop on the node's local network,
 approve or reject registrations. You don't need an SSH window.
 
 ## Install

@@ -124,7 +124,8 @@ const VIEWS = {
         $("button", {class: "plain", on: {click: () => compose({to: full.folder === "inbox" ? full.from : full.to, subject: "Re: " + full.subject, reply_to: full.id})}}, "Reply")));
       poll();
     }}}, $("span", {class: "n"}, ""), $("span", {class: "s"}, m.subject), $("span", {class: "m"}, `${folder === "sent" ? "to " + m.to : m.from} · ${when(m.created_at)}`)));
-    return [panel(...tabs, $("button", {class: "go", style: "float:right;margin-top:0", on: {click: () => compose({})}}, "New message")), panel(...(rows.length ? rows : [$("div", {class: "mute"}, "Empty.")]))];
+    const tabs2 = [...tabs, $("button", {class: "plain", on: {click: () => members()}}, "Members")];
+    return [panel(...tabs2, $("button", {class: "go", style: "float:right;margin-top:0", on: {click: () => compose({})}}, "New message")), panel(...(rows.length ? rows : [$("div", {class: "mute"}, "Empty.")]))];
   },
   async post(x) {
     if (!S.me.can_post) return [panel("Posting opens once a sysop approves your account.")];
@@ -271,12 +272,53 @@ async function internetSettings() {
     if (S.node && S.node.disclaimer) out.push(panel($("div", {class: "mute"}, S.node.disclaimer)));
     return out;
 }
+let DIR = null;
+async function directory(fresh) {
+  if (!DIR || fresh) DIR = await call("directory");
+  return DIR;
+}
+function memberMatch(u, q) {
+  q = q.trim().toLowerCase(); if (!q) return true;
+  return [u.username, u.display_name, u.callsign].some(v => v && v.toLowerCase().includes(q));
+}
+function memberRow(u, pick) {
+  return $("div", {class: "row", on: {click: () => pick(u)}},
+    $("span", {class: "s"}, $("b", {}, u.username), u.display_name ? "  " + u.display_name : "", u.you ? "  (you)" : ""),
+    $("span", {class: "m"}, [u.callsign, u.sysop ? "sysop" : ""].filter(Boolean).join(" · ")));
+}
+function memberList(d, q, pick, max) {
+  const hits = d.users.filter(u => !u.you && memberMatch(u, q));
+  const rows = hits.slice(0, max).map(u => memberRow(u, pick));
+  if (!rows.length) rows.push($("div", {class: "mute"}, q.trim() ? "No member matches that. To mail someone on another node, type user@NODE-ID." : "No other members yet."));
+  if (hits.length > max) rows.push($("div", {class: "mute"}, `${hits.length - max} more: type to narrow the list.`));
+  return rows;
+}
+async function members() {
+  const main = document.getElementById("main");
+  try {
+    const d = await directory(true);
+    const q = $("input", {placeholder: "search by name, username or callsign"}), list = $("div", {});
+    const draw = () => list.replaceChildren(...memberList(d, q.value, u => compose({to: u.username}), 500));
+    q.addEventListener("input", draw); draw();
+    main.replaceChildren(panel($("h3", {}, `Members on ${d.node} (${d.users.filter(u => !u.you).length})`),
+      $("div", {class: "mute"}, "Approved members you can send private mail to. Click someone to write to them."), q,
+      $("button", {class: "plain", on: {click: () => render({folder: "inbox"})}}, "Back")), panel(list));
+    q.focus();
+  } catch (e) { main.replaceChildren(panel(errBox(e))); }
+}
 function compose(x) {
-  const to = $("input", {value: x.to || "", placeholder: "username, or user@NODE-ID"}), subject = $("input", {value: x.subject || "", maxlength: "80"}), body = $("textarea", {}), msg = $("div", {});
-  document.getElementById("main").replaceChildren(panel($("h3", {}, "New private message"), $("label", {}, "To"), to, $("label", {}, "Subject"), subject, $("label", {}, "Message"), body,
+  const to = $("input", {value: x.to || "", placeholder: "start typing a name, or user@NODE-ID"}), subject = $("input", {value: x.subject || "", maxlength: "80"}), body = $("textarea", {}), msg = $("div", {});
+  const picks = $("div", {style: "max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:6px;margin-top:6px"});
+  const pick = u => { to.value = u.username; picks.hidden = true; subject.focus(); };
+  const draw = () => { if (DIR && !to.value.includes("@")) { picks.hidden = false; picks.replaceChildren(...memberList(DIR, to.value, pick, 50)); } else picks.hidden = true; };
+  picks.hidden = true;
+  to.addEventListener("input", draw); to.addEventListener("focus", draw);
+  if (!x.to) directory().then(draw).catch(() => {});
+  document.getElementById("main").replaceChildren(panel($("h3", {}, "New private message"), $("label", {}, "To"), to, picks, $("label", {}, "Subject"), subject, $("label", {}, "Message"), body,
     $("div", {class: "mute"}, "Not end-to-end encrypted: sysops relaying it could read it. Don't send passwords."),
     $("button", {class: "go", on: {click: async () => { try { const a = {to: to.value.trim(), subject: subject.value.trim(), body: body.value}; if (x.reply_to) a.reply_to = x.reply_to; await call("mail_send", a); tab = "mail"; render({folder: "sent"}); } catch (e) { msg.replaceChildren(errBox(e)); } }}}, "Send"),
     $("button", {class: "plain", on: {click: () => render()}}, "Cancel"), msg));
+  if (!x.to) to.focus();
 }
 poll().then(render); setInterval(poll, 5000);
 </script>

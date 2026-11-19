@@ -36,7 +36,7 @@ try:
 except ImportError:  # pragma: no cover - the launchers install it
     sys.exit("BeaconNet Desktop needs the 'asyncssh' package:  python -m pip install --user asyncssh")
 
-VERSION = "1.2.0"
+VERSION = "1.3.0"
 SUBSYSTEM = "beaconnet-client"
 POLL_SECONDS = 30
 
@@ -438,7 +438,7 @@ class App:
 
 # --- the local web page -----------------------------------------------------------------
 
-ALLOWED_OPS = {"boards", "messages", "message", "post", "mail", "mail_get", "mail_send",
+ALLOWED_OPS = {"boards", "messages", "message", "post", "mail", "mail_get", "mail_send", "directory",
                "me", "profile", "password", "keys", "revoke_key",
                "admin_users", "admin_user", "admin_status"}
 

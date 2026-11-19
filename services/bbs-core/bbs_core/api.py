@@ -296,6 +296,10 @@ def create_app(bbs: BBS) -> FastAPI:
                   limit: Annotated[int, Query(ge=1, le=50)] = 15) -> dict:
         return bbs.mail_list(who, folder, before, limit)
 
+    @app.get("/v1/directory")
+    def directory(who: Who) -> dict:
+        return bbs.directory(who)
+
     @app.get("/v1/mail/{pm_id}")
     def mail_get(pm_id: int, who: Who) -> dict:
         return bbs.mail_get(who, pm_id)

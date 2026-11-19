@@ -126,6 +126,7 @@ OPS: dict[str, Callable[[Session, dict], Awaitable[Any]]] = {
     "mail": lambda s, r: s.get("/v1/mail", folder=_folder(r), limit=_int(r, "limit", 20, 1, 50)),
     "mail_get": lambda s, r: s.get(f"/v1/mail/{_int(r, 'mail_id', lo=1)}"),
     "mail_send": _mail_send,
+    "directory": lambda s, r: s.get("/v1/directory"),
     "add_key": lambda s, r: s.post("/v1/account/keys", {"public_key": _str(r, "public_key", 16384)}),
     "me": lambda s, r: s.get("/v1/sessions/me"),
     "profile": _profile,

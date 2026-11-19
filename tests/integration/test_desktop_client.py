@@ -258,6 +258,28 @@ async def test_username_callsign_must_match_and_pending_can_edit(gateways, bbs, 
     conn.close()
 
 
+async def test_member_directory_for_mail(gateways, bbs, active_user, ssh_api, admin_key):
+    ssh_port, _, _ = gateways
+    from conftest import register
+    name, key, _ = active_user
+    pk = gen_key()
+    register(ssh_api, "pendingpat", pk)
+    conn, call = await client(ssh_port, name, key)
+    assert (await call("profile", contact="07700 900123"))["ok"]
+    d = (await call("directory"))["data"]
+    by = {u["username"]: u for u in d["users"]}
+    assert d["node"] and set(by) == {"sysop1", "alice"}          # pending accounts aren't listed
+    assert by["alice"]["you"] is True and by["sysop1"]["sysop"] is True
+    assert by["alice"]["callsign"] is None                         # claimed, not verified: not shown
+    assert all(set(u) == {"username", "display_name", "callsign", "sysop", "you"} for u in d["users"])
+    assert "07700" not in json.dumps(d)                            # contact details never listed
+    assert (await call("mail_send", to="sysop1", subject="hi", body="from the list"))["ok"]
+    conn.close()
+    c2, call2 = await client(ssh_port, "pendingpat", pk)
+    assert (await call2("directory"))["error"]["code"] == "forbidden"
+    c2.close()
+
+
 def test_desktop_radio_settings_saved_and_checked(tmp_path):
     desk = load_desktop()
     ok = desk.clean_radio({"my_call": "m7xyz", "bbs_call": "GM4ABC-10", "via": "gm4xyz-1, MB7ABC",

@@ -253,9 +253,13 @@ async def compose_mail(t: Term, s: Session, to: str | None = None, subject: str 
     t.lines(wrap("Only you and the recipient can read private messages in the BBS. Mail to another node "
                  "(user@NODE-ID) travels over encrypted node links, but each node it passes through stores it. "
                  "Nothing is encrypted end-to-end: don't send passwords or anything you wouldn't want a sysop to see."))
-    to = to or await t.ask("To (username, callsign, or user@NODE-ID): ", 64)
-    if not to:
-        return
+    while not to:
+        to = await t.ask("To (username, callsign, user@NODE-ID, or ? for the member list): ", 64)
+        if not to:
+            return
+        if to == "?":
+            await member_list(t, s)
+            to = None
     t.line(f"To: {c(to)}")
     subject = subject or await t.ask("Subject: ", 80)
     if not subject:
@@ -297,6 +301,28 @@ async def read_mail(t: Term, s: Session, pm_id: int) -> None:
         await _error(t, exc)
 
 
+async def member_list(t: Term, s: Session, pick: bool = False) -> None:
+    try:
+        d = await s.get("/v1/directory")
+    except ApiError as exc:
+        return await _error(t, exc)
+    users = [u for u in d["users"] if not u["you"]]
+    t.title(f"Members on {d['node']} ({len(users)})")
+    if not users:
+        t.line("No other members yet.")
+    for i in range(0, len(users), 20):
+        for u in users[i:i + 20]:
+            extra = " ".join(x for x in (u["callsign"], "sysop" if u["sysop"] else "") if x)
+            t.line(f"  {c(u['username'])[:20]:<20} {c(u['display_name'] or '')[:30]:<30} {extra}")
+        if i + 20 < len(users):
+            if (await t.readline("Enter=more, Q=stop: ", 2)).upper() == "Q":
+                break
+    if pick and users:
+        name = await t.ask("Write to (username, Enter=back): ", 64)
+        if name:
+            await compose_mail(t, s, to=name)
+
+
 async def mail_menu(t: Term, s: Session, me: dict) -> None:
     folder = "inbox"
     while True:
@@ -311,7 +337,7 @@ async def mail_menu(t: Term, s: Session, me: dict) -> None:
             mark = "*" if folder == "inbox" and not m["read"] else " "
             other = m["from"] if m["folder"] == "inbox" else f"to {m['to']}"
             t.line(f"{mark}{m['id']:>6} {short_time(m['created_at'])} {c(other)[:14]:<14} {c(m['subject'])[:44]}")
-        ans = (await t.readline("number=read, I=inbox, S=sent, A=archive, C=compose, Q=back: ", 10)).upper()
+        ans = (await t.readline("number=read, I=inbox, S=sent, A=archive, C=compose, M=members, Q=back: ", 10)).upper()
         if ans.isdigit():
             await read_mail(t, s, int(ans))
         elif ans == "I":
@@ -322,6 +348,8 @@ async def mail_menu(t: Term, s: Session, me: dict) -> None:
             folder = "archive"
         elif ans == "C":
             await compose_mail(t, s)
+        elif ans == "M":
+            await member_list(t, s, pick=True)
         elif ans in ("Q", ""):
             return
 
