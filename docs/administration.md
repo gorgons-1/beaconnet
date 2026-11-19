@@ -62,6 +62,13 @@ Create one from the Pi with
 deliberately no way to promote a user from the console, so a hijacked admin session
 can't create more admins.
 
+## Users' own details
+
+Users can change their display name, callsign and contact details themselves (BBS: *My
+Account & Keys > E*; BeaconNet Desktop: *My account*). A new callsign goes back to
+**unverified**, so check it again in the user's details (*V*). Every change is in the
+audit log as `profile_updated`.
+
 ## Keys and passwords
 
 When someone registers, the BBS offers to use the SSH key their device already has, so

@@ -62,6 +62,7 @@ function head() {
   document.getElementById("node").textContent = S.node && S.node.node_id ? `${S.node.node_name || ""} · ${S.node.node_id}` : "";
   const c = document.getElementById("conn"); c.replaceChildren($("span", {class: "dot " + (on ? "on" : "off")}), on ? `${S.username}${S.sysop ? " (sysop)" : ""}` : S.status);
   const tabs = [["news", "What's new"], ["boards", "Bulletins"], ["mail", "Mail"], ["post", "Post"]];
+  if (S.status === "connected" && S.me && S.me.username) tabs.push(["account", "My account"]);
   if (S.sysop) tabs.push(["sysop", "Sysop"]);
   tabs.push(["settings", "Settings"]);
   if (!on && S.status !== "offline") tab = "settings";
@@ -159,6 +160,46 @@ const VIEWS = {
     });
     return [panel($("h3", {}, "Pending registrations"), ...(rows.length ? rows : [$("div", {class: "mute"}, "Nobody is waiting for approval.")])),
       panel($("div", {class: "mute"}, "Suspensions, moderation, peers and backups are in the BBS Sysop menu (log in from your LAN and press S)."))];
+  },
+  async account() {
+    const me = await call("me");
+    const field = (label, key, n, hint) => { const i = $("input", {maxlength: String(n), value: me[key] || "", placeholder: hint || ""}); return [$("label", {}, label), i]; };
+    const [l1, dn] = field("Display name", "display_name", 40), [l2, cs] = field("Amateur callsign (blank if none)", "callsign", 10, "e.g. GM4ABC"), [l3, ct] = field("Contact details (only sysops see these)", "contact", 120, "phone, email or how to reach you");
+    const msg = $("div", {});
+    const save = $("button", {class: "go", on: {click: async () => {
+      msg.replaceChildren(); const body = {};
+      if (dn.value.trim() !== (me.display_name || "")) body.display_name = dn.value.trim();
+      if (cs.value.trim().toUpperCase() !== (me.callsign || "")) body.callsign = cs.value.trim().toUpperCase();
+      if (ct.value.trim() !== (me.contact || "")) body.contact = ct.value.trim();
+      if (!Object.keys(body).length) { msg.replaceChildren($("span", {class: "mute"}, "Nothing changed.")); return; }
+      try { await call("profile", body); msg.replaceChildren("Saved." + (body.callsign !== undefined && body.callsign ? " Your new callsign shows as unverified until a sysop checks it." : "")); poll(); }
+      catch (e) { msg.replaceChildren(errBox(e)); }
+    }}}, "Save details");
+    const call_state = me.callsign ? (me.callsign_verified ? " (verified)" : " (not yet verified by a sysop)") : "";
+    const out = [panel($("h3", {}, "My details"), $("div", {class: "mute"}, `Username: ${me.username} · status ${me.status}${call_state}`), l1, dn, l2, cs, l3, ct, save, msg)];
+    if (me.status === "ACTIVE") {
+      const p1 = $("input", {type: "password", autocomplete: "new-password"}), p2 = $("input", {type: "password", autocomplete: "new-password"}), pm = $("div", {});
+      out.push(panel($("h3", {}, me.has_password ? "Change password" : "Set a password"),
+        $("div", {class: "mute"}, me.has_password ? "Used when you log in from a device without a key." : "You have no password yet. Set one to log in from devices without your key."),
+        $("div", {class: "grid"}, $("div", {}, $("label", {}, "New password (8+ characters)"), p1), $("div", {}, $("label", {}, "Type it again"), p2)),
+        $("button", {class: "go", on: {click: async () => {
+          pm.replaceChildren();
+          if (p1.value.length < 8) return pm.replaceChildren(errBox({message: "At least 8 characters, please."}));
+          if (p1.value !== p2.value) return pm.replaceChildren(errBox({message: "Those don't match."}));
+          try { await call("password", {password: p1.value}); p1.value = p2.value = ""; pm.replaceChildren("Password saved."); } catch (e) { pm.replaceChildren(errBox(e)); }
+        }}}, "Save password"), pm));
+      const keys = (await call("keys")).keys.filter(k => !k.revoked_at);
+      out.push(panel($("h3", {}, "Devices that log in by key"), ...keys.map(k => {
+        const mine = k.fingerprint === S.device_key, km = $("span", {class: "mute"});
+        return $("div", {class: "row", style: "cursor:default"}, $("span", {class: "s"}, (k.comment || k.type) + (mine ? "  (this computer)" : "")),
+          $("span", {class: "m"}, `added ${when(k.created_at)} · last used ${k.last_used_at ? when(k.last_used_at) : "never"} `), km,
+          $("button", {class: "plain", style: "margin:0", on: {click: async () => {
+            if (!confirm(mine ? "Remove THIS computer's key? You'll need your password to log in here again." : `Remove the key "${k.comment || k.type}"? That device can no longer log in by itself.`)) return;
+            try { await call("revoke_key", {key_id: k.id}); render(); } catch (e) { km.textContent = e.message; }
+          }}}, "Remove"));
+      }), ...(keys.length ? [] : [$("div", {class: "mute"}, "None.")])));
+    }
+    return out;
   },
   async settings() {
     const host = $("input", {value: S.host || "", placeholder: "e.g. 192.168.1.50 or bbs.example.org"}), port = $("input", {value: S.port || 2222, inputmode: "numeric"});

@@ -2,6 +2,15 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.5.0 - edit your details
+
+* Users change their own display name, callsign and contact details: in BeaconNet
+  Desktop (new **My account** tab) or in the BBS (*My Account & Keys > E*). A changed
+  callsign is unverified until a sysop checks it; the registration rules against
+  impersonation still apply. Pending users can edit their details too.
+* BeaconNet Desktop 1.1.0: **My account** tab. Change your details or password, see the
+  devices that log in by key (this computer is marked), and remove one.
+
 ## 1.4.0 - BeaconNet Desktop
 
 * **BeaconNet Desktop** (`clients/desktop`): a double-click app for Windows (.exe), macOS

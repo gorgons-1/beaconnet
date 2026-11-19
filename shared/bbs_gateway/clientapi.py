@@ -99,6 +99,21 @@ def _status(r: dict) -> str | None:
     return st
 
 
+async def _profile(s: Session, r: dict) -> Any:
+    body: dict[str, Any] = {}
+    for k, n in (("display_name", 40), ("contact", 120), ("callsign", 10)):
+        if k in r:
+            v = r[k]
+            if v is not None and (not isinstance(v, str) or len(v) > n):
+                raise BadRequest(f"{k} must be text (up to {n} characters)")
+            body[k] = v or None
+    return await s.post("/v1/account/profile", body)
+
+
+async def _password(s: Session, r: dict) -> Any:
+    return await s.post("/v1/account/password", {"password": _str(r, "password", 256)})
+
+
 OPS: dict[str, Callable[[Session, dict], Awaitable[Any]]] = {
     "hello": _hello,
     "feed": lambda s, r: s.get("/v1/feed", after=None if r.get("after") is None else _int(r, "after"),
@@ -112,6 +127,11 @@ OPS: dict[str, Callable[[Session, dict], Awaitable[Any]]] = {
     "mail_get": lambda s, r: s.get(f"/v1/mail/{_int(r, 'mail_id', lo=1)}"),
     "mail_send": _mail_send,
     "add_key": lambda s, r: s.post("/v1/account/keys", {"public_key": _str(r, "public_key", 16384)}),
+    "me": lambda s, r: s.get("/v1/sessions/me"),
+    "profile": _profile,
+    "password": _password,
+    "keys": lambda s, r: s.get("/v1/account/keys"),
+    "revoke_key": lambda s, r: s.delete(f"/v1/account/keys/{_int(r, 'key_id', lo=1)}"),
     "admin_users": lambda s, r: s.get("/v1/admin/users", status=_status(r), limit=_int(r, "limit", 50, 1, 50)),
     "admin_user": lambda s, r: s.get(f"/v1/admin/users/{_int(r, 'user_id', lo=1)}"),
     "admin_status": _admin_status,

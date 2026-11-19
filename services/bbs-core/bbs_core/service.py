@@ -406,8 +406,9 @@ class BBS:
         }
         if who.user_id:
             with self.db.session() as conn:
-                u = conn.execute("SELECT display_name, status_reason, created_at, password_hash FROM users WHERE id = ?", (who.user_id,)).fetchone()
+                u = conn.execute("SELECT display_name, contact, status_reason, created_at, password_hash FROM users WHERE id = ?", (who.user_id,)).fetchone()
                 out["has_password"] = bool(u["password_hash"])
+                out["contact"] = u["contact"]  # your own; only sysops see anyone else's
                 out["display_name"] = u["display_name"]
                 out["status_reason"] = u["status_reason"]
                 out["created_at"] = u["created_at"]
@@ -924,6 +925,40 @@ class BBS:
              "created_at": r["created_at"], "revoked_at": r["revoked_at"], "last_used_at": r["last_used_at"]}
             for r in conn.execute("SELECT * FROM ssh_keys WHERE user_id = ? ORDER BY id", (uid,))
         ]
+
+    def update_my_profile(self, who: Principal, data: dict) -> dict:
+        """Change your own display name, contact details or callsign. A new callsign is
+        unverified until a sysop checks it, and the same impersonation rules as at
+        registration apply."""
+        if who.user_id is None or who.status not in ("ACTIVE", "PENDING"):
+            raise BBSError("forbidden", "only registered users can change their details")
+        changes: dict[str, Any] = {}
+        if "display_name" in data:
+            changes["display_name"] = sanitize_line(data.get("display_name") or "", 40) or None
+        if "contact" in data:
+            changes["contact"] = sanitize_line(data.get("contact") or "", 120) or None
+        with self.tx() as conn:
+            u = conn.execute("SELECT username, callsign FROM users WHERE id = ?", (who.user_id,)).fetchone()
+            if "callsign" in data:
+                call = validate_callsign(data.get("callsign"))
+                if call != u["callsign"]:
+                    if looks_like_callsign(u["username"]) and call != u["username"].upper():
+                        raise BBSError("invalid_callsign", "your username is a callsign, so your callsign must stay the same")
+                    if self.cfg.registration.require_callsign and not call:
+                        raise BBSError("invalid_callsign", "a callsign is required on this node")
+                    if call and conn.execute(
+                            "SELECT 1 FROM users WHERE id != ? AND (username = ? OR (callsign = ? AND status != 'REJECTED'))",
+                            (who.user_id, call.lower(), call)).fetchone():
+                        raise BBSError("conflict", "that callsign is already registered; contact the sysop if it is yours")
+                    changes["callsign"] = call
+                    changes["callsign_verified"] = 0
+            if not changes:
+                return {"ok": True, "changed": []}
+            sets = ", ".join(f"{k} = ?" for k in changes)
+            conn.execute(f"UPDATE users SET {sets}, updated_at = ? WHERE id = ?", (*changes.values(), ts(), who.user_id))
+            self.audit(conn, who, "profile_updated", "success", "user", who.user_id,
+                       {k: v for k, v in changes.items() if k != "contact"}, who.client_ip)
+        return {"ok": True, "changed": sorted(k for k in changes if k != "callsign_verified")}
 
     def my_keys(self, who: Principal) -> list[dict]:
         if who.user_id is None:

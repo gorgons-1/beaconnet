@@ -35,7 +35,7 @@ try:
 except ImportError:  # pragma: no cover - the launchers install it
     sys.exit("BeaconNet Desktop needs the 'asyncssh' package:  python -m pip install --user asyncssh")
 
-VERSION = "1.0.0"
+VERSION = "1.1.0"
 SUBSYSTEM = "beaconnet-client"
 POLL_SECONDS = 30
 
@@ -256,11 +256,20 @@ class App:
         pub = key.export_public_key("openssh").decode().strip()
         await self.link.call("add_key", public_key=pub)
         self.s.key_file.write_bytes(key.export_private_key("openssh"))
+        self.s.key_file.with_suffix(".pub").write_text(pub + "\n")
         try:
             os.chmod(self.s.key_file, 0o600)
         except OSError:
             pass
         self.password = None
+
+    def device_fingerprint(self) -> str | None:
+        if not self.s.has_key():
+            return None
+        try:
+            return asyncssh.read_private_key(str(self.s.key_file)).get_fingerprint("sha256")
+        except (OSError, ValueError, asyncssh.KeyImportError):
+            return None
 
     def logout(self) -> None:
         if self.link:
@@ -360,6 +369,7 @@ class App:
             "host": s["host"], "port": s["port"], "username": s["username"], "remembered": s.has_key(),
             "me": self.me, "node": {k: self.info.get(k) for k in ("node_id", "node_name", "version", "disclaimer")},
             "sysop": bool(self.me.get("sysop")),
+            "device_key": self.device_fingerprint(),
             "events": [e for e in self.events if e["seq"] > since],
             "notify": {k: s[k] for k in ("notify_bulletins", "notify_emergency", "notify_mail", "notify_registrations")},
         }
@@ -368,6 +378,7 @@ class App:
 # --- the local web page -----------------------------------------------------------------
 
 ALLOWED_OPS = {"boards", "messages", "message", "post", "mail", "mail_get", "mail_send",
+               "me", "profile", "password", "keys", "revoke_key",
                "admin_users", "admin_user", "admin_status"}
 
 
@@ -440,6 +451,8 @@ class Web:
             result = await app.call(op, d)
             if op == "admin_status":
                 app.wake.set()
+            if op in ("profile", "password", "me"):
+                app.me.update({k: v for k, v in (await app.call("me", {})).items() if k != "sysop"})
             return result
         raise ValueError("unknown path")
 

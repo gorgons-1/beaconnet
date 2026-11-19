@@ -65,6 +65,13 @@ stored.
 Your account needs a password for that first login. If you registered with a key, log
 in to the BBS once and set one under *My Account & Keys > P*.
 
+## Your account
+
+The **My account** tab lets you change your display name, callsign and contact details
+(contact details are only shown to sysops), set or change your password, and see which
+devices log in to your account by key. Remove any you no longer use. A changed callsign
+shows as unverified until a sysop checks it.
+
 ## Sysops
 
 The **Sysop** tab and registration alerts appear only for administrator accounts, and

@@ -208,3 +208,51 @@ async def test_desktop_web_page_guards(gateways, tmp_path):
     r = await req(b"POST /api/call HTTP/1.1\r\nHost: localhost:8765\r\nX-BeaconNet-Token: " + web.token.encode() +
                   f"\r\nContent-Length: {len(bad_op)}\r\n\r\n".encode() + bad_op)
     assert b"unknown operation" in r
+
+
+async def test_users_edit_their_own_details(gateways, bbs, active_user, ssh_api, admin_key):
+    ssh_port, _, _ = gateways
+    name, key, _ = active_user                       # alice, callsign GM4AAA (verified on approval? no: claim)
+    conn, call = await client(ssh_port, name, key)
+    me = (await call("me"))["data"]
+    assert me["callsign"] == "GM4AAA" and "contact" in me
+    r = await call("profile", display_name="Alice B", contact="07700 900123", callsign="gm4zzz")
+    assert r["ok"] and r["data"]["changed"] == ["callsign", "contact", "display_name"]
+    me = (await call("me"))["data"]
+    assert (me["display_name"], me["contact"], me["callsign"], me["callsign_verified"]) == \
+        ("Alice B", "07700 900123", "GM4ZZZ", False)
+    # Can't take someone else's callsign (the sysop's), or a username as a callsign.
+    assert (await call("profile", callsign="GM0SYS"))["error"]["code"] == "conflict"
+    assert (await call("profile", callsign="not a call"))["error"]["code"] == "invalid_callsign"
+    # Clearing works; unknown fields are refused by the gateway, not passed on.
+    assert (await call("profile", callsign=None))["ok"]
+    assert (await call("me"))["data"]["callsign"] is None
+    assert (await call("profile", role="admin"))["data"]["changed"] == []
+    # Password: set, then usable for login.
+    assert (await call("password", password="short"))["error"]["code"] == "invalid_password"
+    assert (await call("password", password="a good long one"))["ok"]
+    keys = (await call("keys"))["data"]["keys"]
+    assert len(keys) == 1
+    conn.close()
+    c2, call2 = await client(ssh_port, name, password="a good long one")
+    assert (await call2("me"))["data"]["has_password"] is True
+    # With a password set, the last key can be removed.
+    assert (await call2("revoke_key", key_id=keys[0]["id"]))["ok"]
+    c2.close()
+    with pytest.raises(asyncssh.PermissionDenied):
+        await client(ssh_port, name, key)
+    with bbs.db.session() as conn_db:
+        acts = [r[0] for r in conn_db.execute("SELECT action FROM audit_log WHERE action IN ('profile_updated','password_set','key_revoked')")]
+    assert acts.count("profile_updated") == 2 and "password_set" in acts and "key_revoked" in acts
+
+
+async def test_username_callsign_must_match_and_pending_can_edit(gateways, bbs, ssh_api, admin_key):
+    ssh_port, _, _ = gateways
+    from conftest import register
+    k = gen_key()
+    register(ssh_api, "gm3abc", k, callsign="GM3ABC")  # username is a callsign: must stay
+    conn, call = await client(ssh_port, "gm3abc", k)
+    assert (await call("profile", callsign="GM3XYZ"))["error"]["code"] == "invalid_callsign"
+    assert (await call("profile", display_name="Pending person"))["ok"]   # PENDING users may edit details
+    assert (await call("password", password="long enough pw"))["error"]["code"] == "forbidden"  # not yet approved
+    conn.close()

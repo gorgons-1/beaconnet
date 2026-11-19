@@ -61,6 +61,12 @@ class RegistrationIn(_In):
     password: str | None = Field(default=None, max_length=256)       # for devices without a key
 
 
+class ProfileIn(_In):
+    display_name: str | None = Field(default=None, max_length=80)
+    contact: str | None = Field(default=None, max_length=200)
+    callsign: str | None = Field(default=None, max_length=16)
+
+
 class PasswordIn(_In):
     password: str | None = Field(default=None, max_length=256)        # null removes the password
 
@@ -312,6 +318,10 @@ def create_app(bbs: BBS) -> FastAPI:
     @app.post("/v1/account/keys")
     def add_key(body: AddKeyIn, who: Who) -> dict:
         return bbs.add_my_key(who, body.public_key)
+
+    @app.post("/v1/account/profile")
+    def update_profile(body: ProfileIn, who: Who) -> dict:
+        return bbs.update_my_profile(who, body.model_dump(exclude_unset=True))
 
     @app.post("/v1/account/password")
     def set_password(body: PasswordIn, who: Who) -> dict:

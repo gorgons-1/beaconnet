@@ -329,6 +329,29 @@ async def mail_menu(t: Term, s: Session, me: dict) -> None:
 # --- account ---------------------------------------------------------------------------
 
 
+async def edit_details(t: Term, s: Session, me: dict) -> None:
+    t.title("Edit my details  (Enter keeps the current value, - clears it)")
+    body: dict = {}
+    for key, label, n in (("display_name", "Display name", 40), ("callsign", "Callsign", 10), ("contact", "Contact (private)", 120)):
+        cur = me.get(key) or ""
+        ans = await t.readline(f"{label} [{c(cur)[:30]}]: ", n)
+        if ans == "-":
+            body[key] = None
+        elif ans and ans != cur:
+            body[key] = ans.upper() if key == "callsign" else ans
+    if not body:
+        t.line("Nothing changed.")
+        return
+    if "callsign" in body:
+        t.lines(wrap("A new callsign shows as unverified until a sysop checks it."))
+    if await t.confirm("Save these changes?", default=True):
+        try:
+            await s.post("/v1/account/profile", body)
+            t.line("Saved.")
+        except ApiError as exc:
+            t.error(exc.message)
+
+
 async def account_menu(t: Term, s: Session) -> None:
     while True:
         try:
@@ -343,6 +366,7 @@ async def account_menu(t: Term, s: Session) -> None:
             call += " (verified)" if me.get("callsign_verified") else " (not yet verified by a sysop)"
         t.line(f"Callsign:     {call}")
         t.line(f"Display name: {c(me.get('display_name') or '-')}")
+        t.line(f"Contact:      {c(me.get('contact') or '-')}   (only sysops see this)")
         t.line(f"Status:       {c(me['status'])}" + (f" - {c(me['status_reason'])}" if me.get("status_reason") else ""))
         t.line(f"Member since: {c(me.get('created_at'))}")
         t.line("")
@@ -351,13 +375,20 @@ async def account_menu(t: Term, s: Session) -> None:
             state = f"revoked {short_time(k['revoked_at'])}" if k["revoked_at"] else f"last used {short_time(k['last_used_at'])}"
             t.line(f"  {k['id']:>4}. {c(k['type'])[:11]:<11} {c(k['fingerprint'])[:50]}")
             t.line(f"        {c(k.get('comment') or '')[:30]:<30} {state}")
-        if me["status"] != "ACTIVE":
+        if me["status"] not in ("ACTIVE", "PENDING"):
             await t.pause()
             return
+        if me["status"] == "PENDING":
+            if (await t.readline("E=edit my details, Q=back: ", 5)).upper() == "E":
+                await edit_details(t, s, me)
+                continue
+            return
         t.line(f"Password:     {'set' if me.get('has_password') else 'none (this account logs in by key)'}")
-        ans = (await t.readline("P=set/change password, A=add a key, R=revoke a key, Q=back: ", 5)).upper()
+        ans = (await t.readline("E=edit details, P=password, A=add a key, R=revoke a key, Q=back: ", 5)).upper()
         try:
-            if ans == "P":
+            if ans == "E":
+                await edit_details(t, s, me)
+            elif ans == "P":
                 pw = await _choose_password(t)
                 if pw:
                     await s.post("/v1/account/password", {"password": pw})
