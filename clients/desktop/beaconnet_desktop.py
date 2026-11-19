@@ -36,9 +36,10 @@ try:
 except ImportError:  # pragma: no cover - the launchers install it
     sys.exit("BeaconNet Desktop needs the 'asyncssh' package:  python -m pip install --user asyncssh")
 
-VERSION = "1.3.0"
+VERSION = "1.3.1"
 SUBSYSTEM = "beaconnet-client"
 POLL_SECONDS = 30
+INFO_REFRESH_CHECKS = 10            # re-read node name/id every ~5 minutes
 
 
 # --- settings ---------------------------------------------------------------------------
@@ -374,6 +375,8 @@ class App:
                                 pop=not first)
         self.me["sysop"] = f.get("sysop", False)
         self.me["unread_mail"] = len(f["unread_mail"])
+        if self.checks % INFO_REFRESH_CHECKS == 0:   # the node can be renamed while we stay connected
+            self.info = (await self.link.call("hello"))["info"]
 
     async def run(self) -> None:
         backoff = 5

@@ -2,6 +2,11 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.8.2 - desktop picks up node renames
+
+* BeaconNet Desktop 1.3.1 re-reads the node's name and id every few minutes, so a
+  renamed node shows its new name in the app header without restarting the app.
+
 ## 1.8.1 - name your node
 
 * The installer explains how to name a node, with a pattern (`REGION-PLACE-NN`) and

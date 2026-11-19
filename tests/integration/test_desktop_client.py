@@ -297,3 +297,21 @@ def test_desktop_radio_settings_saved_and_checked(tmp_path):
     s = desk.Settings(tmp_path)
     s.update(connection="radio", radio=ok)
     assert desk.Settings(tmp_path)["radio"]["bbs_call"] == "GM4ABC-10"
+
+
+async def test_desktop_picks_up_node_rename_while_connected(gateways, bbs, admin_key, tmp_path):
+    ssh_port, _, _ = gateways
+    desk = load_desktop()
+    from bbs_core.security import hash_password
+    bbs.bootstrap_admin("renamer", None, None, pub(gen_key()))
+    with bbs.db.session() as conn:
+        conn.execute("UPDATE users SET password_hash = ? WHERE username = 'renamer'", (hash_password("beacon fire 99"),))
+    (tmp_path / "home").mkdir()
+    app = desk.App(desk.Settings(tmp_path / "home"), notify=lambda t, b: None)
+    await app.login("127.0.0.1", ssh_port, "renamer", "beacon fire 99", False)
+    old = app.info["node_name"]
+    bbs.cfg = bbs.cfg.model_copy(update={"node": bbs.cfg.node.model_copy(update={"name": "Oban Packet Radio BBS"})})
+    for _ in range(desk.INFO_REFRESH_CHECKS):
+        await app.check()
+    assert old != "Oban Packet Radio BBS" and app.info["node_name"] == "Oban Packet Radio BBS"
+    app.link.close()
