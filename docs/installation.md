@@ -21,12 +21,14 @@ sudo ~/scotland-bbs/scripts/install.sh
 ```
 
 Installing from a git clone is what lets the node update itself later
-([updating.md](updating.md)). The installer asks for the **node id** (unique in the mesh,
-e.g. `GM4ABC-1`), the first admin's username, callsign and **public** key. You can
+([updating.md](updating.md)). The installer asks for the **node id** (unique in the mesh;
+pattern `REGION-PLACE-NN`, e.g. `SCOT-OBAN-01`, or a callsign such as `GM4ABC-1`), a
+friendly node name and location, the first admin's username, callsign and **public** key. You can
 give them on the command line instead:
 
 ```sh
-sudo ~/scotland-bbs/scripts/install.sh --node-id GM4ABC-1 --node-name "Hilltop Node" \
+sudo ~/scotland-bbs/scripts/install.sh --node-id SCOT-OBAN-01 --node-name "Oban Packet Radio BBS" \
+     --node-location "Oban, Scotland" \
      --admin-user alice --admin-callsign GM4ABC --admin-key-file ~/admin_key.pub
 ```
 

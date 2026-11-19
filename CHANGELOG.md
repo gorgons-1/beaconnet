@@ -2,6 +2,15 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.8.1 - name your node
+
+* The installer explains how to name a node, with a pattern (`REGION-PLACE-NN`) and
+  examples (`SCOT-OBAN-01`, `WALES-CONWY-01`, `US-TX-AUSTIN-01`, or a callsign). It
+  also asks for a friendly node name and a location (new `--node-location` option). It
+  asks again on later runs while the node still has the example id `BEACON-HUB-01`, and
+  won't accept that id.
+* The repository is now `gorgons-1/beaconnet`; links are updated (old links redirect).
+
 ## 1.8.0 - 40-column screens (Commodore 64)
 
 * The terminal BBS fits 40-column screens. It switches automatically when the SSH client

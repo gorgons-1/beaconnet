@@ -70,7 +70,10 @@ sudo ~/scotland-bbs/scripts/install.sh
 
 The installer asks for:
 
-* a **node id**, unique in the mesh, such as `GM4ABC-1`
+* a **node id**, unique in the mesh. Use `REGION-PLACE-NN`, e.g. `SCOT-OBAN-01`,
+  `WALES-CONWY-01` or `US-TX-AUSTIN-01` (or your callsign, e.g. `GM4ABC-1`)
+* a friendly **node name** and **location**, e.g. *Oban Packet Radio BBS*,
+  *Oban, Scotland*
 * your admin username and callsign
 * the path to your SSH **public** key
 

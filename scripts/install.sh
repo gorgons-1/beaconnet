@@ -3,7 +3,7 @@
 # (Raspberry Pi OS Lite 64-bit, Debian bookworm or trixie) or any arm64/x86-64 Debian box.
 #
 #   sudo ./scripts/install.sh                          # interactive: asks for node id and first admin
-#   sudo ./scripts/install.sh --node-id GM4ABC-1 --admin-user alice --admin-callsign GM4ABC \
+#   sudo ./scripts/install.sh --node-id SCOT-OBAN-01 --admin-user alice --admin-callsign GM4ABC \
 #        --admin-key-file ~/.ssh/id_ed25519.pub        # unattended
 #   sudo ./scripts/install.sh --import-secrets /path/bbs-config-....tar.gz   # rebuild a dead Pi
 #
@@ -17,12 +17,13 @@ SRC_DIR=$(cd "$(dirname "$0")/.." && pwd)
 CONTAINER_UID=10001
 
 ADMIN_USER="" ADMIN_CALL="" ADMIN_NAME="" ADMIN_KEY_FILE="" IMPORT_SECRETS="" SKIP_DOCKER=0 SKIP_BACKUP_TEST=0
-NODE_ID="" NODE_NAME=""
+NODE_ID="" NODE_NAME="" NODE_LOCATION=""
 usage() { sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --node-id) NODE_ID=${2^^}; shift 2 ;;
     --node-name) NODE_NAME=$2; shift 2 ;;
+    --node-location) NODE_LOCATION=$2; shift 2 ;;
     --admin-user) ADMIN_USER=$2; shift 2 ;;
     --admin-callsign) ADMIN_CALL=$2; shift 2 ;;
     --admin-name) ADMIN_NAME=$2; shift 2 ;;
@@ -174,17 +175,42 @@ while IFS= read -r line; do
   key=${line%%=*}
   [[ "$line" =~ ^[A-Z_]+= ]] && ! grep -q "^$key=" .env && { echo "$line" >> .env; ok "added new setting ${line%%#*}"; }
 done < .env.example
-# Node id: must be unique in the mesh, so ask on a first install.
-if [[ -z "$NODE_ID" && $FRESH_ENV -eq 1 && -t 0 ]]; then
+# Name the node. The id must be unique in the mesh, so ask on a first install, and again
+# on any later run while it's still the example id from .env.example.
+CUR_ID=$(sed -n 's/^BBS_NODE_ID=\([A-Za-z0-9-]*\).*/\1/p' .env | head -1)
+if [[ -z "$NODE_ID" && -t 0 && ( $FRESH_ENV -eq 1 || -z "$CUR_ID" || "$CUR_ID" == BEACON-HUB-01 ) ]]; then
+  cat <<'NAMING'
+
+    Name your node. Every node in the BeaconNet mesh needs its own id. Users and other
+    nodes see it, and mail to your users from other nodes is addressed user@NODE-ID,
+    so keep it short.
+
+    Pattern:  REGION-PLACE-NN        (A-Z, 0-9 and '-', 3 to 32 characters)
+      REGION  your country or region:  SCOT, WALES, ENG, IE, DE, US-TX, VK2 ...
+      PLACE   your town or area, shortened the way locals say it
+      NN      01 for your first node, 02 for a second one nearby
+
+    Examples: SCOT-OBAN-01    WALES-CONWY-01    US-TX-AUSTIN-01    VK2-SYDNEY-02
+    Or simply your callsign:  GM4ABC-1
+
+NAMING
   suggest=$(hostname -s | tr 'a-z_' 'A-Z-' | tr -cd 'A-Z0-9-')
-  [[ ${#suggest} -ge 3 ]] || suggest=BEACON-NODE-01
-  echo "    Every node in the mesh needs its own id (A-Z 0-9 -, 3-32 chars), e.g. GM4ABC-1 or BEACON-NORTH-01."
+  case "$suggest" in RASPBERRYPI|LOCALHOST|DEBIAN|UBUNTU|PI) suggest="" ;; esac
+  [[ ${#suggest} -ge 3 ]] || suggest=""
   while :; do
-    read -rp "    Node id [$suggest]: " ans; ans=${ans:-$suggest}; ans=${ans^^}
+    if [[ -n "$suggest" ]]; then read -rp "    Node id [$suggest]: " ans; ans=${ans:-$suggest}
+    else read -rp "    Node id (e.g. SCOT-OBAN-01): " ans; fi
+    ans=${ans^^}; ans=${ans// /-}
+    [[ "$ans" == BEACON-HUB-01 ]] && { echo "    that's the example id - please choose your own"; continue; }
     [[ "$ans" =~ ^[A-Z0-9][A-Z0-9-]{2,31}$ ]] && { NODE_ID=$ans; break; }
-    echo "    not valid - use A-Z, 0-9 and '-', 3-32 characters"
+    echo "    not valid - use A-Z, 0-9 and '-', 3 to 32 characters, e.g. SCOT-OBAN-01"
   done
-  read -rp "    Node name shown to users [BeaconNet BBS]: " NODE_NAME
+  echo
+  echo "    The node name is the friendly title on the welcome screen,"
+  echo "    e.g. \"Oban Packet Radio BBS\" or \"Conwy Valley BBS\"."
+  read -rp "    Node name [BeaconNet BBS]: " NODE_NAME
+  echo "    The location is shown under System Information, e.g. \"Oban, Scotland\"."
+  read -rp "    Location (Enter to skip): " NODE_LOCATION
 fi
 [[ -n "$NODE_ID" ]] && { [[ "$NODE_ID" =~ ^[A-Z0-9][A-Z0-9-]{2,31}$ ]] || die "bad node id $NODE_ID"; setenv BBS_NODE_ID "$NODE_ID"; ok "node id $NODE_ID"; }
 NODE_NAME=$(printf '%s' "$NODE_NAME" | tr -cd "A-Za-z0-9 .,()-" | cut -c1-60)
@@ -204,6 +230,10 @@ install -d -m 0755 config state
 for f in config.example/*.yaml; do
   [[ -f "config/$(basename "$f")" ]] || { cp "$f" config/; ok "created config/$(basename "$f")"; }
 done
+NODE_LOCATION=$(printf '%s' "$NODE_LOCATION" | tr -cd "A-Za-z0-9 .,()-" | cut -c1-60)
+if [[ -n "$NODE_LOCATION" ]] && grep -qE '^  location: ""' config/bbs.yaml; then
+  sed -i "s|^  location: \"\"|  location: \"$NODE_LOCATION\"|" config/bbs.yaml && ok "location $NODE_LOCATION"
+fi
 set -a; # shellcheck disable=SC1091
 . ./.env; set +a
 [[ "${BBS_ADMIN_BIND:-127.0.0.1}" == "0.0.0.0" || "${BBS_ADMIN_BIND:-}" == "::" ]] && die "BBS_ADMIN_BIND must not be 0.0.0.0 - the admin console must stay private"
