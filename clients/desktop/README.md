@@ -4,6 +4,8 @@
 [macOS](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-macOS.zip) · [Linux](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-Linux-x86_64.tar.gz)
 (always the newest release; no account needed)
 
+**[Code signing policy](../../CODE_SIGNING.md)**: free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
 A small app for your own computer (Windows, macOS or Linux). It sits in the background,
 keeps an encrypted connection to your BeaconNet node, and **pops up a notification**
 when something arrives:

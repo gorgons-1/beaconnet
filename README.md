@@ -42,6 +42,8 @@ read, post, send mail and approve users.
 
 **Download:** [Windows](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-Windows.zip) · [macOS](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-macOS.zip) · [Linux](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-Linux-x86_64.tar.gz) (more in [clients](clients/README.md))
 
+**[Code signing policy](CODE_SIGNING.md)**: free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
+
 ## Install a node
 
 You need:

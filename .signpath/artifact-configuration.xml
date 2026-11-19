@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- SignPath artifact configuration for BeaconNet Desktop (Windows).
+     The GitHub workflow uploads the unsigned BeaconNet.exe as a zip artifact; SignPath
+     signs the .exe inside it with Authenticode. Paste this into the SignPath project. -->
+<artifact-configuration xmlns="http://signpath.io/artifact-configuration/v1">
+  <zip-file>
+    <pe-file path="BeaconNet.exe" product-name="BeaconNet Desktop" product-version="1.*">
+      <authenticode-sign />
+    </pe-file>
+  </zip-file>
+</artifact-configuration>

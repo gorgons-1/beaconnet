@@ -16,3 +16,5 @@ start it, the first-run security prompt, and running from source:
 [desktop/README.md](desktop/README.md).
 
 Your node must run BeaconNet 1.4.0 or newer.
+
+**[Code signing policy](../CODE_SIGNING.md)**: free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
