@@ -1,7 +1,7 @@
 # BeaconNet Desktop
 
-**Download:** [Windows](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-Windows.zip) ·
-[macOS](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-macOS.zip) · [Linux](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-Linux-x86_64.tar.gz)
+**Download:** [Windows](https://github.com/gorgons-1/beaconnet/releases/latest/download/BeaconNet-Windows.zip) ·
+[macOS](https://github.com/gorgons-1/beaconnet/releases/latest/download/BeaconNet-macOS.zip) · [Linux](https://github.com/gorgons-1/beaconnet/releases/latest/download/BeaconNet-Linux-x86_64.tar.gz)
 (always the newest release; no account needed)
 
 **[Code signing policy](../../CODE_SIGNING.md)**: free code signing provided by [SignPath.io](https://about.signpath.io/), certificate by [SignPath Foundation](https://signpath.org/).
@@ -21,7 +21,7 @@ approve or reject registrations. You don't need an SSH window.
 ## Install
 
 Download the file for your computer from the
-[latest release](https://github.com/gorgons-1/scotland-bbs/releases/latest):
+[latest release](https://github.com/gorgons-1/beaconnet/releases/latest):
 
 | System | Download | Start |
 |---|---|---|

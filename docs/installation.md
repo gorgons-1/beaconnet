@@ -16,7 +16,7 @@
 
 ```sh
 sudo apt-get install -y git
-git clone https://github.com/gorgons-1/scotland-bbs.git ~/scotland-bbs
+git clone https://github.com/gorgons-1/beaconnet.git ~/scotland-bbs
 sudo ~/scotland-bbs/scripts/install.sh
 ```
 

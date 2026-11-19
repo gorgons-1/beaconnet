@@ -7,9 +7,9 @@ it and log in with your BBS username and password.
 
 | Download | For |
 |---|---|
-| **[BeaconNet for Windows](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-Windows.zip)** | Windows 10 / 11 |
-| **[BeaconNet for macOS](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-macOS.zip)** | macOS 12+ (Apple silicon) |
-| **[BeaconNet for Linux](https://github.com/gorgons-1/scotland-bbs/releases/latest/download/BeaconNet-Linux-x86_64.tar.gz)** | 64-bit Intel/AMD Linux |
+| **[BeaconNet for Windows](https://github.com/gorgons-1/beaconnet/releases/latest/download/BeaconNet-Windows.zip)** | Windows 10 / 11 |
+| **[BeaconNet for macOS](https://github.com/gorgons-1/beaconnet/releases/latest/download/BeaconNet-macOS.zip)** | macOS 12+ (Apple silicon) |
+| **[BeaconNet for Linux](https://github.com/gorgons-1/beaconnet/releases/latest/download/BeaconNet-Linux-x86_64.tar.gz)** | 64-bit Intel/AMD Linux |
 
 The links always give the newest release, and you don't need a GitHub account. How to
 start it, the first-run security prompt, and running from source:
