@@ -1,0 +1,61 @@
+---
+# Install or update the Scotland BBS on the nodes in inventory.ini.
+#
+#   cp ansible/inventory.example.ini ansible/inventory.ini    # then edit it
+#   ansible-playbook -i ansible/inventory.ini ansible/deploy.yml -K
+#   ansible-playbook -i ansible/inventory.ini ansible/deploy.yml -K -e admin_user=alice \
+#       -e admin_callsign=GM4ABC -e admin_key_file=~/.ssh/id_ed25519.pub     # first install
+#
+# It copies the project (never .env or secrets/) to a staging directory and runs
+# scripts/install.sh, which installs to /opt/scotland-bbs, keeps existing data and
+# secrets, rebuilds and restarts.
+- name: Scotland Emergency Packet Radio BBS
+  hosts: bbs_nodes
+  become: true
+  vars:
+    project_src: "{{ playbook_dir }}/.."
+    staging_dir: /root/scotland-bbs-src
+    admin_user: ""
+    admin_callsign: ""
+    admin_key_file: ""
+  tasks:
+    - name: Install rsync (needed to copy the project)
+      ansible.builtin.apt:
+        name: rsync
+        state: present
+
+    - name: Copy the project to the node
+      ansible.posix.synchronize:
+        src: "{{ project_src }}/"
+        dest: "{{ staging_dir }}/"
+        delete: true
+        rsync_opts:
+          - "--exclude=.env"
+          - "--exclude=/config/"
+          - "--exclude=/state/"
+          - "--exclude=ansible/inventory.ini"
+          - "--exclude=secrets/*"
+          - "--exclude=backups"
+          - "--exclude=__pycache__"
+          - "--exclude=.pytest_cache"
+
+    - name: Copy the first admin's public key
+      ansible.builtin.copy:
+        src: "{{ admin_key_file }}"
+        dest: "{{ staging_dir }}/admin_key.pub"
+        mode: "0644"
+      when: admin_key_file | length > 0
+
+    - name: Run the installer (installs Docker on first run; a first build takes a few minutes)
+      ansible.builtin.command:
+        argv: "{{ ['bash', staging_dir + '/scripts/install.sh']
+                  + (['--node-id', bbs_node_id] if bbs_node_id is defined else [])
+                  + (['--admin-user', admin_user] if admin_user else [])
+                  + (['--admin-callsign', admin_callsign] if admin_callsign else [])
+                  + (['--admin-key-file', staging_dir + '/admin_key.pub'] if admin_key_file else []) }}"
+      register: install
+      changed_when: true
+
+    - name: Installer output
+      ansible.builtin.debug:
+        msg: "{{ install.stdout_lines[-14:] }}"

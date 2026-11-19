@@ -1,0 +1,19 @@
+# Peer BBS nodes this node exchanges messages with (bbs-sync).
+# Managed by scripts/add-peer.sh and scripts/remove-peer.sh; editing by hand is fine too.
+# Restart after a change:  docker compose restart bbs-core bbs-sync
+#
+#   id:          the peer's node id (BBS_NODE_ID on that node)
+#   address:     host/IP this node dials; null = the peer dials us (it's behind NAT)
+#   port:        the peer's sync port (BBS_SYNC_PORT, default 2224)
+#   public_key:  the peer's node key from its peer card - pinned, both directions
+#   enabled:     false = keep the entry but don't link
+#
+# peers:
+#   - id: SCOTLAND-NORTH-01
+#     name: Inverness node
+#     address: north.example.org
+#     port: 2224
+#     public_key: ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...
+#     enabled: true
+
+peers: []

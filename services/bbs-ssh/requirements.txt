@@ -1,0 +1,4 @@
+# Direct dependencies; exact versions of everything installed are in requirements.lock
+asyncssh==2.19.0
+httpx==0.28.1
+cryptography==44.0.0

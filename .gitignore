@@ -1,0 +1,13 @@
+.env
+secrets/*
+!secrets/README.md
+backups/
+__pycache__/
+*.pyc
+.pytest_cache/
+# node-local state: never in git
+/config/
+/state/
+.env.imported
+ansible/inventory.ini
+*.bak-*

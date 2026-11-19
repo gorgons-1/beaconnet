@@ -1,0 +1,60 @@
+# Scotland Emergency Packet Radio BBS - node configuration (no secrets in here).
+# Read by bbs-core at start-up and validated; a bad value stops the service with a
+# clear error instead of running half-configured. Environment variables in .env
+# override node.id and node.name (BBS_NODE_ID / BBS_NODE_NAME).
+
+node:
+  id: SCOTLAND-HUB-01          # unique across the network: A-Z 0-9 and '-', 3-32 chars
+  name: Scotland Emergency Packet Radio BBS
+  location: Scotland
+  sysop: ""                    # sysop callsign shown in System Information (optional)
+
+guest:
+  enabled: true                # visitors can connect as guest@ and read public boards
+
+registration:
+  enabled: true                # visitors can request an account (always needs admin approval)
+  require_callsign: false      # true = an amateur callsign is mandatory
+  max_keys_per_user: 5
+
+sessions:
+  guest_idle_timeout_s: 600    # disconnect idle guests after 10 minutes
+  user_idle_timeout_s: 1800    # disconnect idle users after 30 minutes
+  admin_idle_timeout_s: 900
+  session_ttl_hours: 12        # a session can't outlive this, even if active
+
+rate_limits:
+  auth_attempts_per_ip_per_min: 30
+  registrations_per_ip_per_hour: 3
+  registrations_global_per_hour: 30
+  posts_per_user_per_hour: 30
+  mail_per_user_per_hour: 60
+
+messages:
+  subject_max: 80
+  body_max_bytes: 8000
+  duplicate_window_hours: 72   # identical subject+body to the same board is refused in this window
+  emergency_default_expiry_hours: 72
+  emergency_max_expiry_hours: 720
+  page_size: 15
+
+privacy:
+  # Admins can moderate bulletins. Reading other people's private mail is off; there is
+  # no API for it while this is false.
+  admin_can_read_private_mail: false
+
+retention:
+  audit_days: 730              # audit entries older than this are pruned (0 = keep forever)
+  session_days: 30             # ended/expired session records
+  rejected_registration_days: 90
+
+mesh:
+  # Node-to-node store-and-forward (bbs-sync). Peers are listed in peers.yaml.
+  hop_limit: 8                         # a message crosses at most this many nodes
+  max_envelopes_per_peer_per_hour: 2000
+  forward_private_mail: true           # relay user@OTHER-NODE mail for neighbours
+  max_clock_skew_hours: 24             # refuse messages dated further in the future
+  seen_days: 60                        # remember message ids this long (dedup)
+
+logging:
+  level: INFO                  # DEBUG, INFO, WARNING, ERROR

@@ -1,0 +1,13 @@
+# Full pinned dependency set, resolved in python:3.12.8-slim-bookworm from requirements.txt
+# Regenerate: scripts/lock-deps.sh
+anyio==4.16.0
+asyncssh==2.19.0
+certifi==2026.10.23
+cffi==2.1.1
+cryptography==44.0.0
+h11==0.16.0
+httpcore==1.0.9
+httpx==0.28.1
+idna==3.20
+pycparser==3.12
+typing_extensions==4.16.0

@@ -1,0 +1,11 @@
+[Unit]
+Description=Scotland BBS daily backup
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@INSTALL_DIR@
+ExecStart=@INSTALL_DIR@/scripts/backup.sh
+Nice=10
+IOSchedulingClass=idle

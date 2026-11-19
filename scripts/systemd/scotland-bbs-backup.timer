@@ -1,0 +1,10 @@
+[Unit]
+Description=Scotland BBS daily backup timer
+
+[Timer]
+OnCalendar=*-*-* @BACKUP_TIME@:00
+RandomizedDelaySec=300
+Persistent=true
+
+[Install]
+WantedBy=timers.target

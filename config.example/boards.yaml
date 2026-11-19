@@ -1,0 +1,43 @@
+# Bulletin boards created on first start. This is a seed list: boards that don't exist
+# yet are created at start-up; existing boards are never renamed, archived or deleted
+# from here. After the first start, manage boards from the admin console.
+#
+#   post: users  - any ACTIVE user may post
+#   post: admins - only administrators post (users can still read)
+#   public: true - guests and pending users can read it
+#   forward: false - keep this board's bulletins on this node (default: shared with peers)
+
+boards:
+  - name: ANNOUNCEMENTS
+    description: Notices from the sysops
+    post: admins
+    public: true
+  - name: GENERAL
+    description: General discussion
+    post: users
+    public: true
+  - name: SCOTLAND
+    description: News and events across Scotland
+    post: users
+    public: true
+  - name: EMERGENCY
+    description: Emergency and priority traffic (not an official emergency service)
+    post: users
+    public: true
+    emergency: true
+  - name: TECHNICAL
+    description: Technical discussion
+    post: users
+    public: true
+  - name: RADIO
+    description: Operating, nets and propagation
+    post: users
+    public: true
+  - name: EQUIPMENT
+    description: Equipment, sales and wanted
+    post: users
+    public: true
+  - name: LOCAL-NODES
+    description: Node status and local network information
+    post: users
+    public: true

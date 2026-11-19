@@ -1,0 +1,179 @@
+# Scotland Emergency Packet Radio BBS.
+#
+#   Internet / LAN ──ssh :2222──► bbs-ssh ───┐ core-public (internal)
+#   Pi only (127.0.0.1) ─ssh :2223─► bbs-admin ─┤ core-admin (internal)
+#                                               ├──► bbs-core ──► SQLite (volume bbs-db)
+#   Peer nodes ◄──ssh :2224 (pinned keys)──► bbs-sync ─┘ core-sync (internal)
+#
+# bbs-core has no published ports and sits only on internal networks (no route out).
+# Only bbs-core mounts the database volume. Settings come from .env (see .env.example).
+
+name: scotland-bbs
+
+x-hardening: &hardening
+  restart: unless-stopped
+  init: true
+  user: "10001:10001"
+  read_only: true
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  privileged: false
+  tmpfs:
+    - /tmp:size=16m,mode=1777,noexec,nosuid,nodev
+  logging:
+    driver: json-file
+    options: { max-size: "${BBS_LOG_MAX_SIZE:-10m}", max-file: "${BBS_LOG_MAX_FILES:-5}" }
+
+x-gateway-env: &gateway-env
+  BBS_CORE_URL: http://bbs-core:8080
+  BBS_LOG_LEVEL: ${BBS_LOG_LEVEL:-INFO}
+  BBS_PUBLIC_HOST: ${BBS_PUBLIC_HOST:?set BBS_PUBLIC_HOST in .env}
+  BBS_PUBLIC_PORT: ${BBS_SSH_PORT:-2222}
+  BBS_MAX_CONN_PER_IP: ${BBS_MAX_CONN_PER_IP:-4}
+  BBS_MAX_CONN_TOTAL: ${BBS_MAX_CONN_TOTAL:-64}
+
+services:
+  bbs-core:
+    <<: *hardening
+    build:
+      context: .
+      dockerfile: services/bbs-core/Dockerfile
+    image: scotland-bbs/bbs-core:${BBS_VERSION:-dev}
+    environment:
+      BBS_VERSION: ${BBS_VERSION:-dev}
+      BBS_NODE_ID: ${BBS_NODE_ID:-}
+      BBS_NODE_NAME: ${BBS_NODE_NAME:-}
+      BBS_LOG_LEVEL: ${BBS_LOG_LEVEL:-INFO}
+      BBS_CONFIG_DIR: /etc/bbs
+      BBS_DB_PATH: /data/bbs.sqlite3
+      BBS_BACKUP_DIR: /backups
+      BBS_SSH_GATEWAY_TOKEN_FILE: /run/secrets/ssh_gateway_token
+      BBS_ADMIN_GATEWAY_TOKEN_FILE: /run/secrets/admin_gateway_token
+      BBS_SYNC_GATEWAY_TOKEN_FILE: /run/secrets/sync_gateway_token
+      BBS_STATE_DIR: /etc/bbs-state
+    volumes:
+      - bbs-db:/data
+      - ./config:/etc/bbs:ro
+      - ./state:/etc/bbs-state:ro       # written by the host (update checks); read-only here
+      - ${BBS_BACKUP_DIR:-/var/backups/scotland-bbs}:/backups
+    secrets: [ssh_gateway_token, admin_gateway_token, sync_gateway_token]
+    networks: [core-public, core-admin, core-sync]
+    cpus: 1.5
+    mem_limit: 384m
+    pids_limit: 128
+    healthcheck:
+      test: ["CMD", "python", "-m", "bbs_core.cli", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+  bbs-ssh:
+    <<: *hardening
+    build:
+      context: .
+      dockerfile: services/bbs-ssh/Dockerfile
+    image: scotland-bbs/bbs-ssh:${BBS_VERSION:-dev}
+    environment:
+      <<: *gateway-env
+      BBS_SERVICE_NAME: bbs-ssh
+      BBS_LISTEN_PORT: "2222"
+      BBS_GATEWAY_TOKEN_FILE: /run/secrets/ssh_gateway_token
+      BBS_HOST_KEY_FILES: /run/secrets/ssh_host_ed25519_key,/run/secrets/ssh_host_rsa_key
+    secrets: [ssh_gateway_token, ssh_host_ed25519_key, ssh_host_rsa_key]
+    ports:
+      - "${BBS_SSH_BIND:-0.0.0.0}:${BBS_SSH_PORT:-2222}:2222"
+    networks: [edge, core-public]
+    depends_on:
+      bbs-core: { condition: service_healthy }
+    cpus: 1.0
+    mem_limit: 256m
+    pids_limit: 64
+    healthcheck:
+      test: ["CMD", "python", "-m", "bbs_gateway.healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  bbs-admin:
+    <<: *hardening
+    build:
+      context: .
+      dockerfile: services/bbs-admin/Dockerfile
+    image: scotland-bbs/bbs-admin:${BBS_VERSION:-dev}
+    environment:
+      <<: *gateway-env
+      BBS_SERVICE_NAME: bbs-admin
+      BBS_LISTEN_PORT: "2223"
+      BBS_GATEWAY_TOKEN_FILE: /run/secrets/admin_gateway_token
+      BBS_HOST_KEY_FILES: /run/secrets/admin_host_ed25519_key
+    secrets: [admin_gateway_token, admin_host_ed25519_key]
+    ports:
+      # Management only. Default 127.0.0.1: log in to the Pi first, then ssh -p 2223 <admin>@127.0.0.1
+      - "${BBS_ADMIN_BIND:-127.0.0.1}:${BBS_ADMIN_PORT:-2223}:2223"
+    networks: [mgmt, core-admin]
+    depends_on:
+      bbs-core: { condition: service_healthy }
+    cpus: 0.5
+    mem_limit: 192m
+    pids_limit: 48
+    healthcheck:
+      test: ["CMD", "python", "-m", "bbs_gateway.healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+  bbs-sync:
+    <<: *hardening
+    build:
+      context: .
+      dockerfile: services/bbs-sync/Dockerfile
+    image: scotland-bbs/bbs-sync:${BBS_VERSION:-dev}
+    environment:
+      BBS_CORE_URL: http://bbs-core:8080
+      BBS_LOG_LEVEL: ${BBS_LOG_LEVEL:-INFO}
+      BBS_LISTEN_PORT: "2224"
+      BBS_SYNC_INTERVAL: ${BBS_SYNC_INTERVAL:-300}
+      BBS_GATEWAY_TOKEN_FILE: /run/secrets/sync_gateway_token
+      BBS_NODE_KEY_FILE: /run/secrets/node_ed25519_key
+    secrets: [sync_gateway_token, node_ed25519_key]
+    ports:
+      # Peer nodes dial this. Only keys listed in config/peers.yaml get in.
+      - "${BBS_SYNC_BIND:-0.0.0.0}:${BBS_SYNC_PORT:-2224}:2224"
+    networks: [sync-edge, core-sync]
+    depends_on:
+      bbs-core: { condition: service_healthy }
+    cpus: 0.5
+    mem_limit: 192m
+    pids_limit: 48
+    healthcheck:
+      test: ["CMD", "python", "-m", "bbs_gateway.healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+      retries: 3
+
+networks:
+  edge: {}                      # public gateway's published port
+  mgmt: {}                      # admin console's published port (bound to BBS_ADMIN_BIND)
+  core-public:
+    internal: true              # bbs-ssh <-> bbs-core, no outside access
+  core-admin:
+    internal: true              # bbs-admin <-> bbs-core, no outside access
+  sync-edge: {}                 # bbs-sync's published port, and its outbound links to peers
+  core-sync:
+    internal: true              # bbs-sync <-> bbs-core, no outside access
+
+volumes:
+  bbs-db: {}                    # SQLite database (+WAL). Lives under /var/lib/docker on the NVMe.
+
+secrets:
+  ssh_gateway_token:      { file: ./secrets/ssh_gateway_token }
+  admin_gateway_token:    { file: ./secrets/admin_gateway_token }
+  ssh_host_ed25519_key:   { file: ./secrets/ssh_host_ed25519_key }
+  ssh_host_rsa_key:       { file: ./secrets/ssh_host_rsa_key }
+  admin_host_ed25519_key: { file: ./secrets/admin_host_ed25519_key }
+  sync_gateway_token:     { file: ./secrets/sync_gateway_token }
+  node_ed25519_key:       { file: ./secrets/node_ed25519_key }

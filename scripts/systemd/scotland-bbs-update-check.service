@@ -1,0 +1,11 @@
+[Unit]
+Description=Scotland BBS release check (installs only if BBS_AUTO_UPDATE=true)
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=@INSTALL_DIR@
+ExecStart=@INSTALL_DIR@/scripts/update.sh --auto
+Nice=10
