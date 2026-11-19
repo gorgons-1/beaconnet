@@ -168,7 +168,7 @@ def test_docs_present():
 
 def test_nothing_personal_or_site_specific_in_published_files():
     """The repository is public: no private addresses, hostnames or user names of a real site."""
-    allowed = {"127.0.0.1", "0.0.0.0", "1.1.1.1"}
+    allowed = {"127.0.0.1", "0.0.0.0", "1.1.1.1", "10.0.0.0", "172.16.0.0", "192.168.0.0"}  # RFC1918 range names
     ip = re.compile(r"\b(?:10|192\.168|172\.(?:1[6-9]|2\d|3[01]))\.\d{1,3}\.\d{1,3}(?:\.\d{1,3})?\b")
     for f in list(_source_files()) + [ROOT / "README.md", ROOT / ".env.example"]:
         if f.name == "inventory.ini" or "tests" in f.parts:

@@ -36,6 +36,7 @@ class RegistrationCfg(_Strict):
     enabled: bool = True
     require_callsign: bool = False
     max_keys_per_user: int = Field(default=5, ge=1, le=20)
+    allow_passwords: bool = True     # devices without an SSH key may register/log in with a password
 
 
 class SessionsCfg(_Strict):
@@ -51,6 +52,8 @@ class RateLimitsCfg(_Strict):
     registrations_global_per_hour: int = Field(default=30, ge=1)
     posts_per_user_per_hour: int = Field(default=30, ge=1)
     mail_per_user_per_hour: int = Field(default=60, ge=1)
+    failed_logins_before_lock: int = Field(default=10, ge=3, le=100)   # wrong passwords in a row
+    lock_minutes: int = Field(default=15, ge=1, le=1440)
 
 
 class MessagesCfg(_Strict):
@@ -78,6 +81,32 @@ class MeshCfg(_Strict):
     forward_private_mail: bool = True                       # relay mail for other nodes through this one
     max_clock_skew_hours: int = Field(default=24, ge=1)     # refuse envelopes dated further in the future
     seen_days: int = Field(default=60, ge=7)                # how long message ids are remembered for dedup
+
+
+RFC1918 = ["10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"]
+
+
+class SysopCfg(_Strict):
+    # Administrators get a Sysop menu inside the normal BBS, but only when they connect
+    # from one of these networks (your LAN). From anywhere else they get the user menu.
+    menu_in_bbs: bool = True
+    allowed_networks: list[str] = Field(default_factory=lambda: list(RFC1918), max_length=32)
+
+    @field_validator("allowed_networks")
+    @classmethod
+    def _networks(cls, v: list[str]) -> list[str]:
+        import ipaddress
+
+        out = []
+        for n in v:
+            try:
+                net = ipaddress.ip_network(n, strict=False)
+            except ValueError as exc:
+                raise ValueError(f"{n!r} is not a network like 192.168.0.0/16") from exc
+            if net.prefixlen == 0:
+                raise ValueError("0.0.0.0/0 would allow the whole internet; list your LAN instead")
+            out.append(str(net))
+        return out
 
 
 class LoggingCfg(_Strict):
@@ -117,6 +146,7 @@ class BBSConfig(_Strict):
     retention: RetentionCfg = RetentionCfg()
     logging: LoggingCfg = LoggingCfg()
     mesh: MeshCfg = MeshCfg()
+    sysop: SysopCfg = SysopCfg()
 
 
 class BoardsFile(_Strict):

@@ -16,6 +16,7 @@ registration:
   enabled: true                # visitors can request an account (always needs admin approval)
   require_callsign: false      # true = an amateur callsign is mandatory
   max_keys_per_user: 5
+  allow_passwords: true        # devices with no SSH key register with a password instead
 
 sessions:
   guest_idle_timeout_s: 600    # disconnect idle guests after 10 minutes
@@ -29,6 +30,8 @@ rate_limits:
   registrations_global_per_hour: 30
   posts_per_user_per_hour: 30
   mail_per_user_per_hour: 60
+  failed_logins_before_lock: 10  # wrong passwords in a row before the account locks
+  lock_minutes: 15
 
 messages:
   subject_max: 80
@@ -55,6 +58,13 @@ mesh:
   forward_private_mail: true           # relay user@OTHER-NODE mail for neighbours
   max_clock_skew_hours: 24             # refuse messages dated further in the future
   seen_days: 60                        # remember message ids this long (dedup)
+
+sysop:
+  # Administrators get an extra "S. Sysop Menu" in the normal BBS, but only when they
+  # connect from these networks (private LAN ranges). From the internet they see the
+  # ordinary user menu. The separate admin console (port 2223) keeps working as well.
+  menu_in_bbs: true
+  allowed_networks: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
 
 logging:
   level: INFO                  # DEBUG, INFO, WARNING, ERROR

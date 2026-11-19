@@ -47,7 +47,7 @@ def test_failed_migration_rolls_back(env, tmp_path):
         migrate(bbs.db, mdir)
     with bbs.db.session() as conn:
         assert conn.execute("SELECT name FROM sqlite_master WHERE name='half_done'").fetchone() is None
-        assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 2
+        assert conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()[0] == 3
 
 
 def test_data_persists_across_restart(env, ssh_api, active_user):

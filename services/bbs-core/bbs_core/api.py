@@ -46,12 +46,23 @@ class KeyIn(_In):
     client_ip: str | None = Field(default=None, max_length=64)
 
 
+class PasswordLoginIn(_In):
+    username: str = Field(max_length=64)
+    password: str = Field(max_length=256)
+    client_ip: str | None = Field(default=None, max_length=64)
+
+
 class RegistrationIn(_In):
     username: str = Field(max_length=64)
     callsign: str | None = Field(default=None, max_length=16)
     display_name: str | None = Field(default=None, max_length=80)
     contact: str | None = Field(default=None, max_length=200)
-    public_key: str = Field(max_length=16384)
+    public_key: str | None = Field(default=None, max_length=16384)   # captured from the SSH login, with consent
+    password: str | None = Field(default=None, max_length=256)       # for devices without a key
+
+
+class PasswordIn(_In):
+    password: str | None = Field(default=None, max_length=256)        # null removes the password
 
 
 class PostIn(_In):
@@ -168,7 +179,9 @@ def create_app(bbs: BBS) -> FastAPI:
         return svc
 
     def admin_service(svc: Annotated[str, Depends(service)]) -> str:
-        if svc != "admin":
+        # The admin gateway, or the public gateway for an administrator connecting from
+        # an allowed LAN network (Principal.is_admin decides; every route checks it).
+        if svc not in ("admin", "ssh"):
             raise BBSError("forbidden", "administrator API is only open to the admin gateway")
         return svc
 
@@ -179,6 +192,9 @@ def create_app(bbs: BBS) -> FastAPI:
         return bbs.principal(token, svc)
 
     def admin(svc: Annotated[str, Depends(admin_service)], who: Annotated[Principal, Depends(principal)]) -> Principal:
+        if not who.is_admin:
+            bbs.audit_now(who, "admin_access", "denied")
+            raise BBSError("forbidden", "administrator access only")
         return who
 
     Svc = Annotated[str, Depends(service)]
@@ -206,6 +222,14 @@ def create_app(bbs: BBS) -> FastAPI:
     @app.post("/v1/sessions/ssh-key")
     def key_session(body: KeyIn, svc: Svc) -> dict:
         return bbs.create_key_session(svc, body.username, body.public_key, body.client_ip)
+
+    @app.post("/v1/auth/password/check")
+    def check_password(body: PasswordLoginIn, svc: Svc) -> dict:
+        return {"accepted": bbs.check_password(svc, body.username, body.password, body.client_ip)}
+
+    @app.post("/v1/sessions/password")
+    def password_session(body: PasswordLoginIn, svc: Svc) -> dict:
+        return bbs.create_password_session(svc, body.username, body.password, body.client_ip)
 
     @app.get("/v1/sessions/me")
     def me(who: Who) -> dict:
@@ -284,6 +308,10 @@ def create_app(bbs: BBS) -> FastAPI:
     @app.post("/v1/account/keys")
     def add_key(body: AddKeyIn, who: Who) -> dict:
         return bbs.add_my_key(who, body.public_key)
+
+    @app.post("/v1/account/password")
+    def set_password(body: PasswordIn, who: Who) -> dict:
+        return bbs.set_my_password(who, body.password)
 
     @app.delete("/v1/account/keys/{key_id}")
     def revoke_key(key_id: int, who: Who) -> dict:

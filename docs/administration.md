@@ -1,9 +1,27 @@
 # Administration
 
-## Reaching the console
+## The easy way: Sysop menu in the BBS
 
-By default the admin console listens only on the Pi's loopback address, so you have to
-be able to log in to the Pi first. Any of these works:
+Log in to the normal BBS from your home network (`ssh -p 2222 <admin>@<pi>`, with your
+key or password). Administrator accounts connecting from a private LAN address
+(10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16) get an extra **S. Sysop Menu**, which is the
+whole admin console below. From the internet the same account sees only the user menu.
+
+Change the networks in `config/bbs.yaml`, then `docker compose restart bbs-core`:
+
+```yaml
+sysop:
+  menu_in_bbs: true            # false = admin only through the separate console
+  allowed_networks: [192.168.0.0/16]
+```
+
+Don't port-forward 2223 on your router. You don't need it for the Sysop menu.
+
+## The separate console
+
+The admin console on port 2223 still works and is key-only. By default it listens only
+on the Pi's loopback address, so you have to be able to log in to the Pi first. Any of
+these works:
 
 ```sh
 ssh -J <you>@<pi> -p 2223 <admin>@127.0.0.1        # from your PC, in one step
@@ -44,10 +62,18 @@ Create one from the Pi with
 deliberately no way to promote a user from the console, so a hijacked admin session
 can't create more admins.
 
-## Keys
+## Keys and passwords
 
-Users add and revoke their own keys under *My Account & Keys*, which is how they rotate
-keys. They can't revoke their last key. An admin can revoke any key (*K* in the user's
+When someone registers, the BBS offers to use the SSH key their device already has, so
+that device logs them in automatically. A device without a key registers with a password
+instead (8+ characters, stored as a scrypt hash). Users set or change a password, and
+add or revoke keys, under *My Account & Keys*. They can't remove their last way in.
+After `rate_limits.failed_logins_before_lock` wrong passwords in a row (10) the account
+locks for `lock_minutes` (15). Set `registration.allow_passwords: false` to make a node
+key-only. The admin console never accepts passwords.
+
+To use the Sysop menu from a PC that doesn't have your admin key, log in once from a
+machine that does (on the LAN), open *My Account & Keys* and set a password. An admin can revoke any key (*K* in the user's
 details), and any session using that key ends at once. To lock someone out completely,
 suspend them.
 

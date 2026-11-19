@@ -127,6 +127,41 @@ class Term:
             raise Disconnect()
         return text.strip()[:max_len]
 
+    async def secret(self, prompt: str, max_len: int = 256) -> str:
+        """Read a line without echoing it (passwords). Unlike readline, keeps spaces and
+        doesn't sanitise: the text goes straight to bbs-core, never to the screen."""
+        echo_off = False
+        if self.has_pty:
+            try:
+                self.p.channel.set_echo(False)
+                echo_off = True
+            except Exception:
+                pass
+        try:
+            self.write(prompt)
+            while True:
+                try:
+                    data = await asyncio.wait_for(self.p.stdin.readline(), timeout=self.idle_timeout)
+                except asyncio.TimeoutError as exc:
+                    self.line("\n\nIdle timeout - disconnecting. 73!")
+                    raise Disconnect() from exc
+                except asyncssh.TerminalSizeChanged:
+                    continue
+                except (asyncssh.BreakReceived, asyncssh.SignalReceived, asyncssh.Error, OSError, ConnectionError) as exc:
+                    raise Disconnect() from exc
+                break
+        finally:
+            if echo_off:
+                try:
+                    self.p.channel.set_echo(True)
+                except Exception:
+                    pass
+        if echo_off:
+            self.line("")
+        if data == "" or "\x04" in data:
+            raise Disconnect()
+        return data.rstrip("\r\n")[:max_len]
+
     async def ask(self, prompt: str, max_len: int = 200, default: str | None = None) -> str:
         answer = await self.readline(prompt, max_len)
         return answer if answer else (default or "")

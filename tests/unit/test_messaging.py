@@ -225,7 +225,7 @@ def test_mail_requires_active_recipient(ssh_api, active_user):
 
 def test_admin_health_and_status(admin_api, admin_session, ssh_api):
     h = admin_api.call("GET", "/v1/admin/health", admin_session, params={"full": "true"}).json()
-    assert h["database"]["integrity_check"] == "ok" and h["database"]["schema_version"] == 2
+    assert h["database"]["integrity_check"] == "ok" and h["database"]["schema_version"] == 3
     assert admin_api.call("GET", "/v1/admin/queues", admin_session).json()["forwarding_enabled"] is False
     nodes = admin_api.call("GET", "/v1/admin/nodes", admin_session).json()["nodes"]
     assert nodes[0]["node_id"] == "BEACON-HUB-01" and nodes[0]["is_local"] == 1

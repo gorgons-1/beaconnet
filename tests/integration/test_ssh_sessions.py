@@ -39,8 +39,9 @@ async def test_full_registration_approval_and_posting(gateways, bbs):
     ssh_port, admin_port, _ = gateways
     user_key = gen_key()
 
-    # 1. Register through the new@ login.
-    t = await connect(ssh_port, "new")
+    # 1. Register through the new@ login. The BBS picks up the key the client offers
+    #    and asks to use it - nothing to copy and paste.
+    t = await connect(ssh_port, "new", user_key)
     await t.expect("Username")
     t.send("hamish")
     await t.expect("callsign")
@@ -49,12 +50,14 @@ async def test_full_registration_approval_and_posting(gateways, bbs):
     t.send("Hamish")
     await t.expect("Contact")
     t.send("")
-    await t.expect("> ")
-    t.send(pub(user_key, "hamish@laptop"))
-    await t.expect("Submit this registration?")
+    screen = await t.expect("Use this device's key to log in?")
+    assert user_key.get_fingerprint("sha256") in screen
+    t.send("y")
+    screen = await t.expect("Submit this registration?")
+    assert "this device's key (automatic)" in screen
     t.send("y")
     screen = await t.expect("-- press Enter --")
-    assert "PENDING" in screen and "SHA256:" in screen
+    assert "PENDING" in screen and "log you in by itself" in screen
     t.send("")
     await t.close()
 
@@ -154,12 +157,97 @@ async def test_no_shell_exec_or_subsystems(gateways):
     conn.close()
 
 
-async def test_no_password_auth_offered(gateways):
+async def test_wrong_or_unknown_password_refused_and_admin_console_key_only(gateways, bbs):
     ssh_port, admin_port, _ = gateways
     for port, user in ((ssh_port, "someone"), (admin_port, "admin")):
         with pytest.raises(asyncssh.PermissionDenied):
             await asyncssh.connect("127.0.0.1", port, username=user, password="hunter2", client_keys=[],
                                    known_hosts=None, agent_path=None)
+    # Even a correct password never opens the admin console.
+    k = gen_key()
+    bbs.bootstrap_admin("pwadmin", None, None, pub(k))
+    with bbs.db.session() as conn:
+        from bbs_core.security import hash_password
+        conn.execute("UPDATE users SET password_hash = ? WHERE username = 'pwadmin'", (hash_password("correct horse 1"),))
+    with pytest.raises(asyncssh.PermissionDenied):
+        await asyncssh.connect("127.0.0.1", admin_port, username="pwadmin", password="correct horse 1", client_keys=[],
+                               known_hosts=None, agent_path=None)
+
+
+async def test_register_and_log_in_with_password_when_device_has_no_key(gateways, bbs):
+    ssh_port, _, _ = gateways
+    # A fresh PC with no SSH key: 'ssh new@' still gets in (any password, or none).
+    t = await connect(ssh_port, "new", password="whatever")
+    await t.expect("Username")
+    t.send("morag")
+    for prompt in ("callsign", "Display name", "Contact"):
+        await t.expect(prompt)
+        t.send("")
+    screen = await t.expect("Password: ")
+    assert "Use this device's key" not in screen
+    t.send("short")
+    screen = await t.expect("Password: ")
+    assert "At least 8 characters" in screen
+    t.send("heather and thistle")
+    await t.expect("Type it again: ")
+    t.send("heather and thistle")
+    screen = await t.expect("Submit this registration?")
+    assert "your password" in screen and "heather" not in screen.split("Type it again")[-1]
+    t.send("y")
+    screen = await t.expect("-- press Enter --")
+    assert "PENDING" in screen and "asked for your password" in screen
+    t.send("")
+    await t.close()
+
+    # Wrong password: refused. Right password: in, read-only while pending.
+    with pytest.raises(asyncssh.PermissionDenied):
+        await connect(ssh_port, "morag", password="heather and thistlE")
+    t = await connect(ssh_port, "morag", password="heather and thistle")
+    screen = await t.expect("Selection:")
+    assert "Account: PENDING" in screen
+    await t.close()
+    with bbs.db.session() as conn:
+        row = conn.execute("SELECT password_hash FROM users WHERE username='morag'").fetchone()
+    assert row[0].startswith("scrypt$") and "heather" not in row[0]
+
+
+async def test_offered_but_unproven_key_is_not_registered(gateways, bbs):
+    """A client that offers someone else's public key (without the private key) and then
+    falls back to a password must not get that key put on its account."""
+    ssh_port, _, _ = gateways
+    victim = gen_key()
+    from bbs_gateway.sshserver import BBSServer
+
+    # Simulate the auth sequence directly on a server object.
+    gw = gateways[2]
+    srv = BBSServer(gw)
+    srv.begin_auth("new")
+    assert await srv.validate_public_key("new", asyncssh.import_public_key(pub(victim))) is True
+    assert srv.proven_key is not None
+    assert await srv.validate_password("new", "x") is True  # fell back to a password
+    assert srv.proven_key is None and srv.proven_key_fp is None
+    srv.begin_auth("new")
+    assert await srv.validate_public_key("new", asyncssh.import_public_key(pub(victim))) is True
+    assert srv.get_kbdint_challenge("new", "", "") is True
+    assert srv.proven_key is None
+
+
+async def test_lan_admin_gets_sysop_menu_in_bbs(gateways, bbs, admin_key, live_core):
+    ssh_port, _, _ = gateways
+    from bbs_core.config import SysopCfg
+
+    bbs.cfg = bbs.cfg.model_copy(update={"sysop": SysopCfg(allowed_networks=["127.0.0.0/8"])})  # treat the test client as LAN
+    t = await connect(ssh_port, "sysop1", admin_key)
+    screen = await t.expect("Selection:")
+    assert "S. Sysop Menu" in screen
+    t.send("S")
+    screen = await t.expect("Selection:")
+    assert "BEACONNET - SYSOP MENU" in screen and "Pending Registrations" in screen and "Q. Back to the BBS" in screen
+    t.send("Q")
+    screen = await t.expect("Selection:")
+    assert "Read Recent Bulletins" in screen  # back in the BBS
+    await t.close()
+
 
 
 async def test_admin_console_refuses_guests_and_users(gateways, bbs):

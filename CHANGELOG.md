@@ -2,6 +2,20 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.3.0 - easy logins and a Sysop menu
+
+* **No more copying keys.** When someone registers with `ssh new@<node>`, the BBS sees
+  the SSH key their device already has and asks "Use this device's key to log in?".
+* **Passwords for devices without a key.** They register with a password instead, and
+  log in with `ssh <username>@<node>` and their password. Passwords are scrypt-hashed,
+  rate-limited, and lock the account for 15 minutes after 10 wrong tries. Users can set
+  or change a password in *My Account & Keys*. `registration.allow_passwords` turns it off.
+* **Sysop menu in the BBS.** Administrators connecting from a private LAN address
+  (10/8, 172.16/12, 192.168/16 by default, `sysop.allowed_networks`) get
+  **S. Sysop Menu**, the full admin console. From the internet they get the user menu.
+  The separate console on port 2223 is unchanged and still key-only.
+* Database migration 0003 (password columns).
+
 ## 1.2.0 - renamed to BeaconNet
 
 * The project is now called **BeaconNet**, a name for operators anywhere in the world.

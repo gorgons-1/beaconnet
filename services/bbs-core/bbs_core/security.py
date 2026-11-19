@@ -182,3 +182,61 @@ class RateLimiter:
     def check(self, action: str, key: str, limit: int, window_s: float) -> None:
         if not self.hit(action, key, limit, window_s):
             raise BBSError("rate_limited", "too many attempts; please wait and try again", status=429)
+
+
+# --- passwords (fallback for devices without an SSH key) ------------------------------
+
+PASSWORD_MIN = 8
+PASSWORD_MAX = 128
+_SCRYPT = {"n": 2**14, "r": 8, "p": 1}
+
+
+def validate_password(password: str | None) -> str:
+    if password is None or not (PASSWORD_MIN <= len(password) <= PASSWORD_MAX):
+        raise BBSError("invalid_password", f"the password must be {PASSWORD_MIN}-{PASSWORD_MAX} characters")
+    if password.strip() != password or any(ord(ch) < 32 for ch in password):
+        raise BBSError("invalid_password", "the password can't start or end with a space or contain control characters")
+    return password
+
+
+def hash_password(password: str) -> str:
+    """scrypt (stdlib, memory-hard), stored as scrypt$n$r$p$salt$hash."""
+    salt = secrets.token_bytes(16)
+    dk = hashlib.scrypt(password.encode("utf-8"), salt=salt, dklen=32, **_SCRYPT)
+    enc = lambda b: base64.b64encode(b).decode()  # noqa: E731
+    return f"scrypt${_SCRYPT['n']}${_SCRYPT['r']}${_SCRYPT['p']}${enc(salt)}${enc(dk)}"
+
+
+_DUMMY_HASH: str | None = None
+
+
+def verify_password(password: str, stored: str | None) -> bool:
+    """Constant-ish time: an account without a password still costs one scrypt."""
+    global _DUMMY_HASH
+    if not stored:
+        if _DUMMY_HASH is None:
+            _DUMMY_HASH = hash_password("x" * 16)
+        stored, password = _DUMMY_HASH, password + "\0"
+    try:
+        algo, n, r, p, salt, want = stored.split("$")
+        if algo != "scrypt":
+            return False
+        dk = hashlib.scrypt(password.encode("utf-8"), salt=base64.b64decode(salt), dklen=32,
+                            n=int(n), r=int(r), p=int(p))
+    except (ValueError, TypeError):
+        return False
+    return hmac.compare_digest(dk, base64.b64decode(want))
+
+
+def ip_in_networks(ip: str | None, networks: list[str]) -> bool:
+    import ipaddress
+
+    if not ip:
+        return False
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+        addr = addr.ipv4_mapped
+    return any(addr in ipaddress.ip_network(n, strict=False) for n in networks)

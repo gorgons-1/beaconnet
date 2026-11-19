@@ -3,12 +3,18 @@
 The server only ever runs the BBS menu. There is no shell, no exec, no subsystems
 (sftp/scp), no port, agent or X11 forwarding - those requests are refused.
 Identity is decided by bbs-core: the gateway passes on the public key the client
-proved it holds during the SSH handshake, and core says whose key it is.
+proved it holds during the SSH handshake (or the password typed), and core says whose
+it is.
+
+'new' (registration) logins: the gateway accepts whatever key the client offers, after
+the client proves it holds it, so registration can offer to use it - nobody has to copy
+a key around. A client with no key gets in without one and registers with a password.
 """
 
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import logging
 import os
 from collections import Counter
@@ -76,9 +82,33 @@ class Gateway:
     cfg: GatewayConfig
     api: CoreAPI
     app: Callable[["Gateway", Term, Session, "BBSServer"], Awaitable[None]]
-    register_app: Callable[["Gateway", Term, Session], Awaitable[None]] | None = None
+    register_app: Callable[["Gateway", Term, Session, "BBSServer"], Awaitable[None]] | None = None
     per_ip: Counter = field(default_factory=Counter)
     total: int = 0
+
+
+def _client_ip(peer: str | None, sock: object) -> str:
+    """The client's address as bbs-core should see it.
+
+    Docker's userland proxy (used for IPv6 and some hairpin connections) replaces the real
+    address with the gateway of this container's own network, which is a private address.
+    A connection that appears to come from our own Docker network is therefore marked
+    'docker-proxy', so it can never count as LAN (the Sysop menu is LAN-only)."""
+    if not peer:
+        return "-"
+    try:
+        addr = ipaddress.ip_address(peer)
+        if isinstance(addr, ipaddress.IPv6Address) and addr.ipv4_mapped:
+            addr = addr.ipv4_mapped
+        own = ipaddress.ip_address(sock[0]) if isinstance(sock, tuple) and sock else None  # type: ignore[index]
+        if isinstance(own, ipaddress.IPv6Address) and own.ipv4_mapped:
+            own = own.ipv4_mapped
+    except ValueError:
+        return peer
+    if own is not None and not own.is_loopback and addr.version == own.version and addr != own:
+        if addr in ipaddress.ip_network(f"{own}/{16 if own.version == 4 else 64}", strict=False):
+            return "docker-proxy"
+    return str(addr)
 
 
 class BBSServer(asyncssh.SSHServer):
@@ -91,13 +121,15 @@ class BBSServer(asyncssh.SSHServer):
         self.username = ""
         self.mode = "key"            # key | guest | register
         self.proven_key: str | None = None
+        self.proven_key_fp: str | None = None
+        self.password: str | None = None
 
     # --- connection accounting ---------------------------------------------------------
 
     def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
         self.conn = conn
         peer = conn.get_extra_info("peername")
-        self.ip = peer[0] if peer else "-"
+        self.ip = _client_ip(peer[0] if peer else None, conn.get_extra_info("sockname"))
         gw = self.gw
         if gw.total >= gw.cfg.max_total or gw.per_ip[self.ip] >= gw.cfg.max_per_ip:
             self.over_limit = True
@@ -123,9 +155,12 @@ class BBSServer(asyncssh.SSHServer):
             self._banner("Too many connections - please try again later.\n")
             return True  # require auth that can never succeed
         mode = self.gw.cfg.no_auth_users.get(username.lower())
+        if mode == "register":
+            self.mode = mode
+            return True   # take the client's key if it has one (see validate_public_key), else let it in
         if mode:
             self.mode = mode
-            return False  # guests and new registrations need no credentials
+            return False  # guests need no credentials
         if self.gw.cfg.banner:
             self._banner(self.gw.cfg.banner)
         return True
@@ -138,9 +173,38 @@ class BBSServer(asyncssh.SSHServer):
             pass
 
     def password_auth_supported(self) -> bool:
-        return False
+        # Public gateway only: approved users without a key, and 'new' clients without one.
+        return self.gw.cfg.service == "ssh" and not self.over_limit
 
     def kbdint_auth_supported(self) -> bool:
+        return self.mode == "register" and not self.over_limit
+
+    def get_kbdint_challenge(self, username: str, lang: str, submethods: str):  # type: ignore[no-untyped-def]
+        if self.mode != "register":
+            return False
+        self._not_by_key()
+        return True  # in, no questions: the registration form asks what it needs
+
+    def _not_by_key(self) -> None:
+        # A key offered earlier but never signed for is not proven: forget it.
+        self.proven_key = self.proven_key_fp = None
+
+    async def validate_password(self, username: str, password: str) -> bool:
+        if self.over_limit:
+            return False
+        if self.mode == "register":
+            self._not_by_key()
+            return True  # whatever the client typed is ignored; registration sets the password
+        try:
+            r = await self.gw.api.call("POST", "/v1/auth/password/check",
+                                       json={"username": username, "password": password[:256], "client_ip": self.ip})
+        except ApiError as exc:
+            log_event("auth_check_failed", logging.WARNING, client_ip=self.ip, code=exc.code)
+            return False
+        if r.get("accepted"):
+            self._not_by_key()
+            self.password = password[:256]
+            return True
         return False
 
     def host_based_auth_supported(self) -> bool:
@@ -153,6 +217,11 @@ class BBSServer(asyncssh.SSHServer):
         if self.over_limit:
             return False
         openssh = key.export_public_key("openssh").decode().strip()
+        self.password = None
+        if self.mode == "register":
+            # asyncssh checks the signature after we say yes, so the key is proven.
+            self.proven_key, self.proven_key_fp = openssh, key.get_fingerprint("sha256")
+            return True
         try:
             r = await self.gw.api.call("POST", "/v1/auth/ssh-key/check",
                                        json={"username": username, "public_key": openssh, "client_ip": self.ip})
@@ -178,16 +247,20 @@ async def _session(gw: Gateway, process: asyncssh.SSHServerProcess) -> None:
     try:
         if server.mode in ("guest", "register"):
             data = await gw.api.call("POST", "/v1/sessions/guest", json={"client_ip": server.ip, "transport": "ssh"})
-        else:
-            if server.proven_key is None:
-                raise ApiError("unauthenticated", "no key", 401)
+        elif server.proven_key is not None:
             data = await gw.api.call("POST", "/v1/sessions/ssh-key", json={
                 "username": server.username, "public_key": server.proven_key, "client_ip": server.ip})
+        elif server.password is not None:
+            data = await gw.api.call("POST", "/v1/sessions/password", json={
+                "username": server.username, "password": server.password, "client_ip": server.ip})
+            server.password = None
+        else:
+            raise ApiError("unauthenticated", "not logged in", 401)
         session = Session(gw.api, data["token"], data["kind"], int(data.get("idle_timeout_s", 600)))
         term = Term(process, idle_timeout=session.idle_timeout_s)
         log_event("session_start", kind=session.kind, client_ip=server.ip, user=server.username if session.kind != "guest" else "guest")
         if server.mode == "register" and gw.register_app is not None:
-            await gw.register_app(gw, term, session)
+            await gw.register_app(gw, term, session, server)
         else:
             await gw.app(gw, term, session, server)
     except Disconnect:

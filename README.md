@@ -6,8 +6,9 @@ of LinBPQ, BPQMail and LinFBB, and nodes link up to pass bulletins and mail alon
 beacon fires from hill to hill. A node runs on a Raspberry Pi 5, or any 64-bit Debian
 box, in Docker. It needs no cloud services and keeps working with no internet connection.
 
-* People connect over **SSH** and use a classic menu. There are no passwords and no
-  Linux shell.
+* People connect over **SSH** and use a classic menu, with no Linux shell. Registering
+  is easy: if the user's device has an SSH key the BBS offers to use it (no copying
+  keys about), otherwise they pick a password.
 * It has bulletin boards, an **EMERGENCY** board for prioritised, area-tagged and
   expiring bulletins, and private mail.
 * Accounts are approved by a sysop, and callsigns are checked.
@@ -25,8 +26,12 @@ box, in Docker. It needs no cloud services and keeps working with no internet co
 ```text
 ssh -p 2222 guest@<node>        # read public bulletins, no account needed
 ssh -p 2222 new@<node>          # register (a sysop approves every account)
-ssh -p 2222 <username>@<node>   # approved users log in with their registered SSH key
+ssh -p 2222 <username>@<node>   # log in: automatic with your device's key, else your password
 ```
+
+Sysops log in the same way. An administrator connecting from the local network
+(10.x, 172.16-31.x, 192.168.x) gets an extra **S. Sysop Menu** to approve users, moderate
+and check the node. From the internet the same account sees only the normal menu.
 
 ## Install a node
 
@@ -87,7 +92,7 @@ them by itself only if you set `BBS_AUTO_UPDATE=true`. See
 
 | Task | Command (in `/opt/scotland-bbs`) |
 |---|---|
-| Admin console | `ssh -J <you>@<pi> -p 2223 <admin>@127.0.0.1` |
+| Admin | log in to the BBS from your LAN and press **S**, or `ssh -J <you>@<pi> -p 2223 <admin>@127.0.0.1` |
 | Status | `sudo ./scripts/healthcheck.sh` |
 | Logs | `docker compose logs -f [bbs-core\|bbs-ssh\|bbs-admin\|bbs-sync]` |
 | Stop / start | `docker compose stop` / `docker compose up -d` |

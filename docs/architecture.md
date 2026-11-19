@@ -53,9 +53,12 @@
 3. On every request, core resolves the token and re-reads the account's status and role
    from the database. That means suspensions, rejections and key revocations take effect
    on the user's very next keypress, without a reconnect.
-4. Usernames `guest`/`bbs` (guest) and `new`/`register` (registration) need no
-   credentials. Every other login is public-key only. Password and keyboard-interactive
-   logins are not offered.
+4. Usernames `guest`/`bbs` (guest) need no credentials. `new`/`register` accepts any key
+   the client proves it holds (so registration can offer to use it), or lets a client
+   without a key straight in to register with a password. Other logins use a registered
+   key, or the account's password (`/v1/sessions/password`) on the public gateway only.
+5. A public-gateway session of an ACTIVE admin from `sysop.allowed_networks` counts as
+   admin (`Principal.is_admin`), which opens the `/v1/admin/*` routes to the Sysop menu.
 
 Account states: `PENDING` → `ACTIVE` (approved) or `REJECTED`. `ACTIVE` ↔ `SUSPENDED`.
 Pending and suspended accounts can read what guests can read. Only `ACTIVE` accounts
@@ -86,8 +89,8 @@ stops.
 
 | Topic | Decision |
 |---|---|
-| Admin access | A separate SSH service bound to 127.0.0.1 by default. You reach it after logging in to the Pi, or with `ssh -J`. This keeps it off the LAN entirely. |
-| Login | SSH public keys only. Requests to register say how to make a key. |
+| Admin access | A Sysop menu in the public BBS for admins connecting from the LAN, plus the separate key-only console bound to 127.0.0.1. |
+| Login | The device's SSH key, picked up at registration with the user's consent, or a password for devices without one. |
 | Pending users | They can log in with their key and read. Their status is shown on screen. |
 | Suspended users | Read-only access with a notice. Their existing sessions end when the suspension is applied. |
 | Admin reading private mail | Off (`privacy.admin_can_read_private_mail: false`), and no API exists for it. |

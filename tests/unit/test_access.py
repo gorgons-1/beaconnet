@@ -1,5 +1,7 @@
 """Access and authentication rules (acceptance criteria 'Access and authentication')."""
 
+import pytest
+
 from conftest import approve, gen_key, pub, register, user_id
 
 
@@ -102,11 +104,27 @@ def test_gateway_cannot_choose_identity(ssh_api, active_user):
 
 
 def test_public_gateway_cannot_reach_admin_api(ssh_api, admin_key):
-    # Even the administrator's own key, via the public gateway, gets an ordinary session.
-    s = ssh_api.login("sysop1", admin_key).json()
-    assert s["kind"] == "user"
-    for path in ("/v1/admin/users", "/v1/admin/audit", "/v1/admin/health", "/v1/admin/config"):
-        assert ssh_api.call("GET", path, s["token"]).status_code == 403
+    # Even the administrator's own key, via the public gateway from the internet, gets an
+    # ordinary session and no admin API.
+    for ip in ("203.0.113.9", "docker-proxy", "-", "2001:db8::1"):
+        s = ssh_api.login("sysop1", admin_key, ip=ip).json()
+        assert s["kind"] == "user"
+        assert ssh_api.call("GET", "/v1/sessions/me", s["token"]).json()["sysop"] is False
+        for path in ("/v1/admin/users", "/v1/admin/audit", "/v1/admin/health", "/v1/admin/config"):
+            assert ssh_api.call("GET", path, s["token"]).status_code == 403, (ip, path)
+
+
+@pytest.mark.parametrize("ip", ["192.168.60.20", "10.1.2.3", "172.20.0.9", "::ffff:192.168.1.5"])
+def test_admin_on_lan_gets_sysop_menu(ssh_api, admin_key, ip):
+    s = ssh_api.login("sysop1", admin_key, ip=ip).json()
+    assert ssh_api.call("GET", "/v1/sessions/me", s["token"]).json()["sysop"] is True
+    assert ssh_api.call("GET", "/v1/admin/users", s["token"]).status_code == 200
+
+
+def test_ordinary_user_on_lan_is_not_sysop(ssh_api, active_user):
+    _, _, s = active_user  # logged in from 10.0.0.1
+    assert ssh_api.call("GET", "/v1/sessions/me", s).json()["sysop"] is False
+    assert ssh_api.call("GET", "/v1/admin/users", s).status_code == 403
 
 
 def test_admin_gateway_requires_admin_role(admin_api, ssh_api, active_user):

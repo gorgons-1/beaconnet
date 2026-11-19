@@ -24,7 +24,11 @@ from .logs import event
 from .mesh import USER_RE, Mesh
 from .security import (
     RateLimiter,
+    hash_password,
     hash_token,
+    ip_in_networks,
+    verify_password,
+    validate_password,
     new_token,
     parse_public_key,
     sanitize_body,
@@ -71,6 +75,7 @@ class Principal:
     status: str | None  # PENDING | ACTIVE | SUSPENDED | REJECTED (None for guests)
     client_ip: str | None
     idle_timeout_s: int
+    sysop_lan: bool = False  # public-gateway session from an allowed LAN network
 
     @property
     def is_active(self) -> bool:
@@ -78,7 +83,12 @@ class Principal:
 
     @property
     def is_admin(self) -> bool:
-        return self.kind == "admin" and self.service == "admin" and self.role == "admin" and self.status == "ACTIVE"
+        if self.role != "admin" or self.status != "ACTIVE":
+            return False
+        if self.kind == "admin" and self.service == "admin":
+            return True
+        # An administrator on the public BBS, connecting from the LAN: Sysop menu.
+        return self.service == "ssh" and self.kind == "user" and self.sysop_lan
 
     @property
     def label(self) -> str:
@@ -274,6 +284,75 @@ class BBS:
         event(log, "session_created", kind=kind, service=service, user=row["username"], client_ip=client_ip)
         return {"token": token, "kind": kind, "idle_timeout_s": self._idle_for(kind)}
 
+    # --- password login (devices without an SSH key) ------------------------------------
+
+    def _password_owner(self, conn: sqlite3.Connection, service: str, username: str, password: str,
+                        client_ip: str | None) -> sqlite3.Row | None:
+        """Check a password, with per-IP rate limiting and a per-account lockout."""
+        rl = self.cfg.rate_limits
+        self.limits.check("auth", client_ip or "-", rl.auth_attempts_per_ip_per_min, 60)
+        if service != "ssh" or not self.cfg.registration.allow_passwords:
+            return None  # the admin console stays key-only
+        row = conn.execute("SELECT id AS user_id, username, role, status, password_hash, failed_logins, locked_until"
+                           " FROM users WHERE username = ?", ((username or "").strip().lower()[:64],)).fetchone()
+        if row is not None and row["locked_until"] and parse_ts(row["locked_until"]) > utcnow():
+            verify_password(password, None)  # same cost either way
+            return None
+        ok = verify_password(password, row["password_hash"] if row else None)
+        if row is None:
+            return None
+        if not ok:
+            fails = row["failed_logins"] + 1
+            locked = ts_in(minutes=rl.lock_minutes) if fails >= rl.failed_logins_before_lock else None
+            conn.execute("UPDATE users SET failed_logins = ?, locked_until = ? WHERE id = ?",
+                         (0 if locked else fails, locked, row["user_id"]))
+            if locked:
+                self.audit(conn, None, "account_locked", "denied", "user", row["user_id"],
+                           {"why": f"{fails} wrong passwords", "minutes": rl.lock_minutes}, client_ip)
+            return None
+        if row["status"] == "REJECTED":
+            return None
+        if row["failed_logins"] or row["locked_until"]:
+            conn.execute("UPDATE users SET failed_logins = 0, locked_until = NULL WHERE id = ?", (row["user_id"],))
+        return row
+
+    def check_password(self, service: str, username: str, password: str, client_ip: str | None) -> bool:
+        with self.db.session() as conn, transaction(conn):
+            return self._password_owner(conn, service, username, password, client_ip) is not None
+
+    def create_password_session(self, service: str, username: str, password: str, client_ip: str | None,
+                                transport: str = "ssh") -> dict:
+        with self.tx() as conn:
+            row = self._password_owner(conn, service, username, password, client_ip)
+            if row is None:
+                raise Denied(BBSError("unauthenticated", "wrong username or password"), None, "login", "user",
+                             (username or "")[:32], {"service": service, "why": "bad password"}, client_ip)
+            token = self._create_session(conn, "user", service, transport, client_ip, row["user_id"])
+            self.audit(conn, None, "login", "success", "user", row["user_id"],
+                       {"service": service, "username": row["username"], "method": "password"}, client_ip)
+        event(log, "session_created", kind="user", service=service, user=row["username"], client_ip=client_ip)
+        return {"token": token, "kind": "user", "idle_timeout_s": self._idle_for("user")}
+
+    def set_my_password(self, who: Principal, password: str | None) -> dict:
+        """Set, change or (password=None) remove your own password."""
+        if who.user_id is None or who.status != "ACTIVE":
+            raise BBSError("forbidden", "only approved users can change their password")
+        if password is not None and not self.cfg.registration.allow_passwords:
+            raise BBSError("forbidden", "password logins are turned off on this node")
+        with self.tx() as conn:
+            if password is None:
+                n = conn.execute("SELECT COUNT(*) FROM ssh_keys WHERE user_id = ? AND revoked_at IS NULL",
+                                 (who.user_id,)).fetchone()[0]
+                if n == 0:
+                    raise BBSError("conflict", "you have no SSH key, so the password is your only way in")
+                conn.execute("UPDATE users SET password_hash = NULL, updated_at = ? WHERE id = ?", (ts(), who.user_id))
+            else:
+                conn.execute("UPDATE users SET password_hash = ?, failed_logins = 0, locked_until = NULL, updated_at = ?"
+                             " WHERE id = ?", (hash_password(validate_password(password)), ts(), who.user_id))
+            self.audit(conn, who, "password_removed" if password is None else "password_set", "success",
+                       "user", who.user_id, {}, who.client_ip)
+        return {"ok": True, "has_password": password is not None}
+
     def principal(self, token: str | None, service: str) -> Principal:
         """Resolve a session token. Account status and role are re-read on every request,
         so a suspension or revoked key takes effect immediately."""
@@ -306,7 +385,12 @@ class BBS:
             session_id=row["id"], kind=row["kind"], service=row["service"], user_id=row["user_id"],
             username=row["username"], callsign=row["callsign"], callsign_verified=bool(row["callsign_verified"]),
             role=row["role"], status=row["status"], client_ip=row["client_ip"], idle_timeout_s=self._idle_for(row["kind"]),
+            sysop_lan=self._sysop_lan(row["service"], row["client_ip"]),
         )
+
+    def _sysop_lan(self, service: str, client_ip: str | None) -> bool:
+        sc = self.cfg.sysop
+        return service == "ssh" and sc.menu_in_bbs and ip_in_networks(client_ip, sc.allowed_networks)
 
     def end_session(self, who: Principal) -> None:
         with self.db.session() as conn:
@@ -318,10 +402,12 @@ class BBS:
             "callsign_verified": who.callsign_verified, "role": who.role, "status": who.status,
             "idle_timeout_s": who.idle_timeout_s,
             "can_post": who.is_active, "can_mail": who.is_active,
+            "sysop": who.service == "ssh" and who.is_admin,
         }
         if who.user_id:
             with self.db.session() as conn:
-                u = conn.execute("SELECT display_name, status_reason, created_at FROM users WHERE id = ?", (who.user_id,)).fetchone()
+                u = conn.execute("SELECT display_name, status_reason, created_at, password_hash FROM users WHERE id = ?", (who.user_id,)).fetchone()
+                out["has_password"] = bool(u["password_hash"])
                 out["display_name"] = u["display_name"]
                 out["status_reason"] = u["status_reason"]
                 out["created_at"] = u["created_at"]
@@ -370,7 +456,14 @@ class BBS:
             raise BBSError("invalid_callsign", "a callsign is required to register on this node")
         display = sanitize_line(data.get("display_name") or "", 40) or None
         contact = sanitize_line(data.get("contact") or "", 120) or None
-        key = parse_public_key(data.get("public_key", ""))
+        key = parse_public_key(data["public_key"]) if data.get("public_key") else None
+        pw_hash = None
+        if data.get("password") is not None:
+            if not self.cfg.registration.allow_passwords:
+                raise BBSError("forbidden", "password logins are turned off on this node; register with an SSH key")
+            pw_hash = hash_password(validate_password(data["password"]))
+        if key is None and pw_hash is None:
+            raise BBSError("invalid_input", "an SSH key or a password is required")
         self.limits.check("register_ip", ip, rl.registrations_per_ip_per_hour, 3600)
         self.limits.check("register_all", "-", rl.registrations_global_per_hour, 3600)
         now = ts()
@@ -390,26 +483,29 @@ class BBS:
                 ).fetchone()
                 if clash:
                     raise BBSError("conflict", "that callsign is already registered; contact the sysop if it is yours")
-            if conn.execute("SELECT 1 FROM ssh_keys WHERE fingerprint = ?", (key.fingerprint,)).fetchone():
-                raise BBSError("conflict", "that SSH key is already registered to an account")
+            if key and conn.execute("SELECT 1 FROM ssh_keys WHERE fingerprint = ?", (key.fingerprint,)).fetchone():
+                raise BBSError("conflict", "this device's SSH key is already registered to an account")
             cur = conn.execute(
-                "INSERT INTO users(username, callsign, display_name, contact, role, status, created_at, updated_at)"
-                " VALUES (?,?,?,?, 'user', 'PENDING', ?, ?)",
-                (username, callsign, display, contact, now, now),
+                "INSERT INTO users(username, callsign, display_name, contact, role, status, password_hash, created_at, updated_at)"
+                " VALUES (?,?,?,?, 'user', 'PENDING', ?, ?, ?)",
+                (username, callsign, display, contact, pw_hash, now, now),
             )
             uid = cur.lastrowid
-            conn.execute(
-                "INSERT INTO ssh_keys(user_id, key_type, key_data, fingerprint, comment, created_at) VALUES (?,?,?,?,?,?)",
-                (uid, key.key_type, key.key_data, key.fingerprint, key.comment, now),
-            )
+            if key:
+                conn.execute(
+                    "INSERT INTO ssh_keys(user_id, key_type, key_data, fingerprint, comment, created_at) VALUES (?,?,?,?,?,?)",
+                    (uid, key.key_type, key.key_data, key.fingerprint, key.comment, now),
+                )
             conn.execute(
                 "INSERT INTO registrations(user_id, requested_at, client_ip, transport) VALUES (?,?,?,?)",
                 (uid, now, who.client_ip, who.service),
             )
+            fp = key.fingerprint if key else None
             self.audit(conn, who, "registration_submitted", "success", "user", uid,
-                       {"username": username, "callsign": callsign, "fingerprint": key.fingerprint})
+                       {"username": username, "callsign": callsign, "fingerprint": fp, "password": pw_hash is not None})
         event(log, "registration_submitted", user=username, client_ip=who.client_ip)
-        return {"username": username, "callsign": callsign, "status": "PENDING", "fingerprint": key.fingerprint}
+        return {"username": username, "callsign": callsign, "status": "PENDING", "fingerprint": fp,
+                "password": pw_hash is not None}
 
     # --- boards and bulletins ------------------------------------------------------
 
@@ -827,8 +923,9 @@ class BBS:
             if row is None or row["revoked_at"]:
                 raise BBSError("not_found", "no such active key")
             live = conn.execute("SELECT COUNT(*) FROM ssh_keys WHERE user_id = ? AND revoked_at IS NULL", (who.user_id,)).fetchone()[0]
-            if live <= 1:
-                raise BBSError("conflict", "that is your only key; add a new one before revoking it")
+            has_pw = conn.execute("SELECT password_hash IS NOT NULL FROM users WHERE id = ?", (who.user_id,)).fetchone()[0]
+            if live <= 1 and not has_pw:
+                raise BBSError("conflict", "that is your only key; add a new one (or set a password) before revoking it")
             conn.execute("UPDATE ssh_keys SET revoked_at = ?, revoked_by = ? WHERE id = ?", (ts(), who.user_id, key_id))
             self.audit(conn, who, "key_revoked", "success", "ssh_key", key_id, {"fingerprint": row["fingerprint"], "by": "owner"})
 
@@ -843,6 +940,7 @@ class BBS:
         out = {k: r[k] for k in ("id", "username", "callsign", "display_name", "contact", "role", "status",
                                  "status_reason", "created_at", "updated_at", "approved_at")}
         out["callsign_verified"] = bool(r["callsign_verified"])
+        out["has_password"] = bool(r["password_hash"])
         if keys:
             out["keys"] = self._keys(conn, r["id"])
             out["registrations"] = [dict(x) for x in conn.execute(

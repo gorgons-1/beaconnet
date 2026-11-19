@@ -30,8 +30,15 @@ container user. Compose mounts each one only into the services that need it, at
 
 * No shell: shell, exec, sftp/scp, port forwarding, agent forwarding and X11 are all
   refused (tested).
-* Public keys only, with no passwords to guess. Auth checks are rate-limited per IP, and
-  each gateway limits connections per IP and in total.
+* SSH keys, or a password for devices that have no key. Passwords are scrypt hashes;
+  wrong passwords are rate-limited per IP and lock the account after 10 in a row. Each
+  gateway limits connections per IP and in total. The admin console is key-only.
+* At registration the key is taken from the SSH login itself, after the client proved
+  it holds the private key. A key that was offered but not signed for is discarded.
+* Admin from the public BBS (the Sysop menu) needs an ACTIVE admin account **and** a
+  connection from `sysop.allowed_networks` (private LAN ranges by default), checked by
+  bbs-core on every request. Connections that Docker's proxy rewrote to its own network
+  address are never treated as LAN.
 * Registrations are rate-limited per IP and across the whole node. No account is
   approved automatically.
 * Impersonation: usernames and callsigns are unique and case-insensitive across both

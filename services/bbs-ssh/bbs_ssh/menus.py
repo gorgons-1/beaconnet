@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from bbs_gateway import sysop
 from bbs_gateway.client import ApiError, Session
 from bbs_gateway.sshserver import BBSServer, Gateway
 from bbs_gateway.term import WIDTH, Disconnect, Term, box, c, short_time, wrap
@@ -353,9 +354,15 @@ async def account_menu(t: Term, s: Session) -> None:
         if me["status"] != "ACTIVE":
             await t.pause()
             return
-        ans = (await t.readline("A=add a key, R=revoke a key, Q=back: ", 5)).upper()
+        t.line(f"Password:     {'set' if me.get('has_password') else 'none (this account logs in by key)'}")
+        ans = (await t.readline("P=set/change password, A=add a key, R=revoke a key, Q=back: ", 5)).upper()
         try:
-            if ans == "A":
+            if ans == "P":
+                pw = await _choose_password(t)
+                if pw:
+                    await s.post("/v1/account/password", {"password": pw})
+                    t.line("Password saved.")
+            elif ans == "A":
                 t.line("Paste the new public key (one line, e.g. contents of ~/.ssh/id_ed25519.pub):")
                 key = await t.readline("> ", 8000)
                 if key:
@@ -375,16 +382,33 @@ async def account_menu(t: Term, s: Session) -> None:
 # --- registration ----------------------------------------------------------------------
 
 
-async def register_flow(gw: Gateway, t: Term, s: Session) -> None:
+async def _choose_password(t: Term) -> str | None:
+    t.lines(wrap("Choose a password for this BBS (8 or more characters). It is only for this BBS - "
+                 "don't reuse your email or bank password."))
+    for _ in range(3):
+        pw = await t.secret("Password: ")
+        if not pw:
+            return None
+        if len(pw) < 8:
+            t.error("At least 8 characters, please.")
+            continue
+        if await t.secret("Type it again: ") != pw:
+            t.error("Those didn't match - try again.")
+            continue
+        return pw
+    return None
+
+
+async def register_flow(gw: Gateway, t: Term, s: Session, server: BBSServer | None = None) -> None:
     t.title("Register a new account")
-    t.lines(wrap(
-        "Every account is approved by a sysop before it can post or send mail. You log in with an SSH key, "
-        "not a password: paste your PUBLIC key (the .pub file, e.g. ~/.ssh/id_ed25519.pub). "
-        "No key yet? On your computer run:  ssh-keygen -t ed25519"))
-    t.lines(wrap("Callsigns are checked by the sysop before they are shown as verified. "
+    t.lines(wrap("A sysop approves every account before it can post or send mail. "
+                 "Callsigns are checked by the sysop before they are shown as verified. "
                  "Contact details are optional and only visible to sysops."))
     t.line("")
-    vals = {"username": "", "callsign": "", "display_name": "", "contact": "", "public_key": ""}
+    device_key = server.proven_key if server is not None else None
+    device_fp = server.proven_key_fp if server is not None else None
+    vals = {"username": "", "callsign": "", "display_name": "", "contact": ""}
+    login: dict | None = None
     for attempt in range(3):
         def dflt(k: str) -> str:
             return f" [{vals[k][:20]}]" if vals[k] else ""
@@ -392,29 +416,44 @@ async def register_flow(gw: Gateway, t: Term, s: Session) -> None:
         vals["callsign"] = (await t.ask(f"Amateur callsign (blank if none){dflt('callsign')}: ", 10, vals["callsign"])).upper()
         vals["display_name"] = await t.ask(f"Display name (optional){dflt('display_name')}: ", 40, vals["display_name"])
         vals["contact"] = await t.ask(f"Contact details, private (optional){dflt('contact')}: ", 120, vals["contact"])
-        t.line("Paste your SSH public key on one line" + (" (Enter keeps the one you gave)" if vals["public_key"] else "") + ":")
-        vals["public_key"] = await t.ask("> ", 8000, vals["public_key"])
-        if not vals["username"] or not vals["public_key"]:
-            t.error("Username and public key are required.")
+        if not vals["username"]:
+            t.error("A username is required.")
             if not await t.confirm("Try again?", default=True):
                 return
             continue
+        if login is None:
+            t.line("")
+            if device_key:
+                t.lines(wrap(f"This device has an SSH key ({c(device_fp or '')}). If you use it, this device logs "
+                             f"you in automatically from now on - no password to remember."))
+                if await t.confirm("Use this device's key to log in?", default=True):
+                    login = {"public_key": device_key}
+            if login is None:
+                pw = await _choose_password(t)
+                if pw is None:
+                    t.error("You need a password (or a device with an SSH key) to register.")
+                    return
+                login = {"password": pw}
         t.line("")
         t.line(f"Username: {c(vals['username'])}   Callsign: {c(vals['callsign'] or '-')}")
         t.line(f"Display:  {c(vals['display_name'] or '-')}   Contact: {c(vals['contact'] or '-')}")
+        t.line("Log in with: " + ("this device's key (automatic)" if "public_key" in login else "your password"))
         if not await t.confirm("Submit this registration?", default=True):
             return
         try:
-            r = await s.post("/v1/registrations", {k: (v or None) for k, v in vals.items()})
+            r = await s.post("/v1/registrations", {**{k: (v or None) for k, v in vals.items()}, **login})
         except ApiError as exc:
             t.error(exc.message)
+            if "key" in exc.message and "public_key" in login:
+                login = None  # e.g. key already registered: offer a password next time
             if exc.code == "rate_limited" or attempt == 2 or not await t.confirm("Correct and try again?", default=True):
                 return
             continue
         t.line("")
         t.line(t.bold("Registration received - status PENDING."))
-        t.line(f"Key fingerprint: {c(r['fingerprint'])}")
-        t.lines(wrap(f"A sysop will review it. Log in with your key at any time to see your status "
+        how = ("This device will log you in by itself." if r.get("fingerprint")
+               else "You'll be asked for your password when you connect.")
+        t.lines(wrap(f"A sysop will review it. {how} Connect any time to see your status "
                      f"(read-only until approved):   ssh -p {gw.cfg.public_port} {c(r['username'])}@{c(gw.cfg.public_host)}"))
         await t.pause()
         return
@@ -449,7 +488,7 @@ async def help_screen(t: Term, gw: Gateway) -> None:
 Connecting
   Visitors:        ssh -p {p} guest@{h}
   Register:        ssh -p {p} new@{h}     (or option 3 from the guest menu)
-  Approved users:  ssh -p {p} <username>@{h}   with your registered SSH key
+  Approved users:  ssh -p {p} <username>@{h}   (key: automatic, else password)
 
 Menus
   Type the number or letter shown and press Enter. Q goes back or disconnects.
@@ -493,6 +532,8 @@ async def run(gw: Gateway, t: Term, s: Session, server: BBSServer) -> None:
             third = "3. Register New Account" if me["kind"] == "guest" else "3. My Account Status"
             items = ["1. Read Public Bulletins", "2. Browse Bulletin Boards", third, "4. User Login",
                      "5. System Information", "6. Help"]
+        if me.get("sysop"):
+            items.append("S. Sysop Menu")
         t.lines(items)
         t.line("")
         t.line("Q. Disconnect")
@@ -508,6 +549,15 @@ async def run(gw: Gateway, t: Term, s: Session, server: BBSServer) -> None:
             continue
         if ans == "L":
             await list_messages(t, s, me, None)
+            continue
+        if ans == "S" and me.get("sysop"):
+            try:
+                await sysop.run(gw, t, s, server, embedded=True)
+            except ApiError as exc:
+                if exc.status == 401:
+                    t.error("Your session has ended. Please reconnect.")
+                    return
+                await _error(t, exc)
             continue
         if ans == "A":
             if t.has_pty:
@@ -548,17 +598,16 @@ async def login_help(t: Term, gw: Gateway, me: dict) -> None:
     if me.get("username"):
         t.line(f"You are logged in as {c(me['username'])}; account status {c(me['status'])}.")
     else:
-        t.lines(wrap("Logging in uses your SSH key, so it happens when you connect rather than from this menu. "
-                     "Disconnect, then connect with your username:"))
+        t.lines(wrap("You log in when you connect, not from this menu. Disconnect, then connect with your username:"))
         t.line("")
         t.line(f"    ssh -p {gw.cfg.public_port} <username>@{c(gw.cfg.public_host)}")
         t.line("")
-        t.lines(wrap("Your SSH client offers your key automatically. If you see 'Permission denied (publickey)', "
-                     "the key isn't the one you registered - use  ssh -i <keyfile> ..."))
+        t.lines(wrap("If you registered with this device's key, you go straight in. Otherwise you are asked for "
+                     "your password."))
     await t.pause()
 
 
-async def register_only(gw: Gateway, t: Term, s: Session) -> None:
+async def register_only(gw: Gateway, t: Term, s: Session, server: BBSServer | None = None) -> None:
     """Session for 'ssh new@host': straight into registration."""
     info = await s.get("/v1/system/info")
     me = await s.get("/v1/sessions/me")
@@ -566,5 +615,5 @@ async def register_only(gw: Gateway, t: Term, s: Session) -> None:
     if not info.get("registration_open"):
         t.error("Registration is closed on this node.")
         return
-    await register_flow(gw, t, s)
+    await register_flow(gw, t, s, server)
     t.line("73 - goodbye.")
