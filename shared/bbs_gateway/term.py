@@ -1,4 +1,4 @@
-"""Line-based terminal I/O for 80-column, low-bandwidth sessions.
+"""Line-based terminal I/O for 80- or 40-column (C64-style), low-bandwidth sessions.
 
 Output is plain text with optional, minimal ANSI (bold/reverse only). Nothing typed by
 a user is ever written out unfiltered: c() removes every control character, so posted
@@ -11,11 +11,40 @@ import asyncio
 import re
 import textwrap
 import unicodedata
+from contextvars import ContextVar
 
 import asyncssh
 
 WIDTH = 80
+NARROW = 40                 # Commodore 64 / small screens
+MIN_WIDTH, MAX_WIDTH = 32, 80
 _CONTROL = re.compile(r"[\x00-\x08\x0b-\x1f\x7f-\x9f]")
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
+# Terminal types that mean "8-bit micro": plain ASCII, no ANSI, 40 columns unless told otherwise.
+RETRO_TERMS = ("c64", "c128", "commodore", "petscii", "vic20", "plus4")
+_ASCII_MAP = str.maketrans({"\u2018": "'", "\u2019": "'", "\u201c": '"', "\u201d": '"', "\u2013": "-",
+                            "\u2014": "-", "\u2026": "...", "\u00a0": " ", "\u00a3": "L", "\u20ac": "EUR",
+                            "\u00df": "ss", "\u00e6": "ae", "\u00c6": "AE", "\u00f8": "o", "\u00d8": "O"})
+_cols: ContextVar[int] = ContextVar("bbs_cols", default=WIDTH)
+
+
+def cols() -> int:
+    """Screen width of the current session (80, or 40 on a C64)."""
+    return _cols.get()
+
+
+def rule() -> str:
+    return "-" * (cols() - 1)
+
+
+def to_ascii(text: str) -> str:
+    """Fold to 7-bit ASCII for 8-bit terminals: accents dropped, smart quotes straightened."""
+    s = unicodedata.normalize("NFKD", text.translate(_ASCII_MAP))
+    return "".join(ch if ord(ch) < 128 else ("" if unicodedata.combining(ch) else "?") for ch in s)
+
+
+def vlen(s: str) -> int:
+    return len(_ANSI.sub("", s))
 
 
 class Disconnect(Exception):
@@ -29,7 +58,8 @@ def c(text: object) -> str:
     return "".join(ch for ch in s if unicodedata.category(ch) != "Cf")
 
 
-def wrap(text: str, width: int = WIDTH - 1) -> list[str]:
+def wrap(text: str, width: int | None = None) -> list[str]:
+    width = width or cols() - 1
     out: list[str] = []
     for line in c(text).split("\n"):
         if not line.strip():
@@ -40,7 +70,8 @@ def wrap(text: str, width: int = WIDTH - 1) -> list[str]:
     return out
 
 
-def box(lines: list[str], width: int = 62) -> list[str]:
+def box(lines: list[str], width: int | None = None) -> list[str]:
+    width = width or min(62, cols() - 1)
     inner = width - 2
     out = ["+" + "-" * inner + "+"]
     for ln in lines:
@@ -63,12 +94,69 @@ def short_time(iso: str | None) -> str:
 class Term:
     def __init__(self, process: asyncssh.SSHServerProcess, idle_timeout: int = 600) -> None:
         self.p = process
-        term_type = process.get_terminal_type()
+        term_type = (process.get_terminal_type() or "").lower() or None
         self.has_pty = term_type is not None
-        self.ansi = self.has_pty and term_type not in ("dumb", "unknown")
-        _, rows, _, _ = process.get_terminal_size()
+        retro = bool(term_type) and any(r in term_type for r in RETRO_TERMS)
+        self.ansi = self.has_pty and term_type not in ("dumb", "unknown") and not retro
+        width, rows, _, _ = process.get_terminal_size()
         self.rows = rows if rows and rows >= 10 else 24
         self.idle_timeout = idle_timeout
+        self.width_fixed = False
+        self.ascii = retro
+        self.set_width(NARROW if retro and not (width and width < WIDTH) else self._fit_cols(width))
+
+    @staticmethod
+    def _fit_cols(width: int | None) -> int:
+        if not width or width >= WIDTH:
+            return WIDTH
+        return max(MIN_WIDTH, width)
+
+    def set_width(self, width: int, fixed: bool = False) -> None:
+        """40-ish columns also means plain ASCII: 8-bit terminals have no Unicode."""
+        self.width = width
+        self.width_fixed = self.width_fixed or fixed
+        if width < WIDTH:
+            self.ascii = True
+        _cols.set(width)
+
+    @property
+    def narrow(self) -> bool:
+        return self.width < WIDTH
+
+    def fit(self, text: str) -> str:
+        """Word-wrap every line to the screen, leaving the last column free (a C64 moves to
+        the next row by itself after column 40, which would double-space the output)."""
+        if self.ascii:
+            text = to_ascii(text)
+        if not self.narrow:
+            return text
+        return "\n".join(self._fold(ln) for ln in text.split("\n"))
+
+    def _fold(self, line: str) -> str:
+        room = self.width - 1
+        if vlen(line) <= room:
+            return line
+        lead = len(line) - len(line.lstrip(" "))
+        cont = " " * min(lead + 2, 8)
+        out: list[str] = []
+        cur = line[:lead]
+        for word in line[lead:].split(" "):
+            while vlen(word) > room - len(cont):          # a word too long for any row: hard-break it
+                take = room - vlen(cur) - (1 if vlen(cur.strip()) else 0)
+                if take < 4:
+                    out.append(cur.rstrip())
+                    cur, take = cont, room - len(cont)
+                sep = " " if cur.strip() else ""
+                out.append(cur + sep + word[:take])
+                cur, word = cont, word[take:]
+            sep = " " if cur.strip() else ""
+            if vlen(cur) + len(sep) + vlen(word) > room:
+                out.append(cur.rstrip())
+                cur = cont + word
+            else:
+                cur = cur + sep + word
+        out.append(cur)
+        return "\n".join(out)
 
     # --- output ------------------------------------------------------------------
 
@@ -76,7 +164,7 @@ class Term:
         """Write our own text (already safe). On a pty, asyncssh's line editor turns
         newlines into CRLF itself."""
         try:
-            self.p.stdout.write(text)
+            self.p.stdout.write(self.fit(text))
         except (asyncssh.Error, OSError, BrokenPipeError) as exc:
             raise Disconnect() from exc
 
@@ -95,7 +183,7 @@ class Term:
     def title(self, s: str) -> None:
         self.line("")
         self.line(self.bold(c(s)))
-        self.line("-" * min(len(s), WIDTH - 1))
+        self.line("-" * min(len(s), self.width - 1))
 
     def error(self, msg: str) -> None:
         self.line(("*** " if not self.ansi else "\x1b[1m*** ") + c(msg) + ("\x1b[0m" if self.ansi else ""))
@@ -114,6 +202,8 @@ class Term:
             except asyncssh.TerminalSizeChanged as exc:
                 if exc.height and exc.height >= 10:
                     self.rows = exc.height
+                if exc.width and not self.width_fixed:
+                    self.set_width(self._fit_cols(exc.width))
                 continue
             except (asyncssh.BreakReceived, asyncssh.SignalReceived) as exc:
                 raise Disconnect() from exc
@@ -178,6 +268,8 @@ class Term:
 
     async def page(self, lines: list[str]) -> bool:
         """Show lines a screen at a time. Returns False if the user quit early."""
+        if self.narrow:                     # count the rows the wrapped lines really take
+            lines = [r for ln in lines for r in self.fit(ln).split("\n")]
         per = max(8, self.rows - 2)
         for i in range(0, len(lines), per):
             self.lines(lines[i:i + per])

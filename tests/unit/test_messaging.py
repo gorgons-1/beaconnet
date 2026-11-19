@@ -233,3 +233,23 @@ def test_admin_health_and_status(admin_api, admin_session, ssh_api):
     assert "service_tokens" not in str(cfg).replace("services_with_tokens", "")
     info = ssh_api.call("GET", "/v1/system/info", ssh_api.guest()).json()
     assert info["node_id"] == "BEACON-HUB-01" and "999" in info["disclaimer"]
+
+
+def test_forty_column_reflow_and_ascii():
+    from bbs_gateway.term import to_ascii, vlen
+
+    class P:                       # just enough of an asyncssh process for Term
+        def get_terminal_type(self):
+            return "c64"
+
+        def get_terminal_size(self):
+            return (0, 0, 0, 0)
+
+    from bbs_gateway.term import Term, cols
+    t = Term(P())
+    assert t.width == 40 and cols() == 40 and t.ascii and not t.ansi
+    out = t.fit("  " + "word " * 30 + "x" * 90)
+    assert all(vlen(r) <= 39 for r in out.split("\n")) and out.count("x") == 90
+    assert to_ascii("Café ‘q’ — £5 中") == "Cafe 'q' - L5 ?"
+    t.set_width(80, fixed=True)
+    assert cols() == 80 and t.fit("a " * 60).count("\n") == 0

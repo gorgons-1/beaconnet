@@ -33,7 +33,7 @@ Never touched by an update: `.env`, `config/`, `secrets/`, the database volume a
 * By default it only **checks**. If a new release exists, it appears under **System
   health** in the admin console.
 * With `BBS_AUTO_UPDATE=true` in `.env`, it also installs the release, with a backup
-  first. On a node people rely on in an emergency, leave this off and update when you
+  first. On a node people rely on, leave this off and update when you
   choose.
 
 ```sh

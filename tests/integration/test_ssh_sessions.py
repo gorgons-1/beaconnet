@@ -354,3 +354,63 @@ async def test_member_list_in_mail(gateways, admin_key, active_user, bbs):
     screen = await t.expect("M=members")
     assert "Sent to alice" in screen
     await t.close()
+
+
+def _rows(text: str) -> list[str]:
+    import re
+    text = re.sub(r"\x1b\[[0-9;?]*[A-Za-z]", "", text).replace("\r", "")
+    return text.split("\n")
+
+
+async def test_commodore_64_forty_columns(gateways, admin_key, active_user, ssh_api, bbs):
+    ssh_port, _, _ = gateways
+    _, _, s_alice = active_user
+    ssh_api.call("POST", "/v1/messages", s_alice, json={
+        "board": "GENERAL", "subject": "Café net tonight — “bring” a very long subject line here",
+        "body": "A long body line that is certainly wider than forty columns and must wrap neatly on a C64."})
+    # His C64 SSH client says it's a C64 with a 40x25 screen.
+    t = await connect(ssh_port, "sysop1", admin_key, term_type="c64", size=(40, 25))
+    await t.expect("Selection:")
+    t.send("1")
+    await t.expect("Q=back:")
+    t.send("Q")
+    await t.expect("Selection:")
+    t.send("8")                                   # help: paged, long lines reflowed
+    for _ in range(6):
+        try:
+            await t.expect("Q=stop --", timeout=2)
+        except AssertionError:
+            break
+        t.send("")
+    await t.expect("Selection:")
+    t.send("5")
+    await t.expect("Q=back:")
+    t.send("M")
+    await t.expect("Enter=back):")
+    t.send("")
+    await t.expect("Q=back:")
+    t.send("Q")
+    await t.expect("Selection:")
+    t.send("W")                                   # switch to 80 columns by hand
+    screen = await t.expect("Selection:")
+    assert "Screen width: 80 columns." in screen
+    await t.close()
+    narrow = t.all.split("Screen width: 80")[0]
+    too_wide = [r for r in _rows(narrow) if len(r) > 39]
+    assert not too_wide, too_wide
+    assert narrow.isascii() and "\x1b[1m" not in narrow          # plain ASCII, no ANSI for a C64
+    assert "Cafe net" in narrow and "W. 80 columns" in narrow and "112, 911" in narrow
+
+
+async def test_narrow_terminal_detected_by_size(gateways, admin_key):
+    ssh_port, _, _ = gateways
+    t = await connect(ssh_port, "sysop1", admin_key, pty=True, size=(40, 24))
+    screen = await t.expect("Selection:")
+    assert "W. 80 columns" in screen and all(len(r) <= 39 for r in _rows(screen))
+    t.send("Q")
+    await t.close()
+    t = await connect(ssh_port, "sysop1", admin_key, pty=True, size=(100, 30))
+    screen = await t.expect("Selection:")
+    assert "W. 40 columns" in screen
+    t.send("Q")
+    await t.close()

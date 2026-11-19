@@ -266,12 +266,14 @@ class Term:
         await self.conn.wait_closed()
 
 
-async def connect(port: int, username: str, key=None, pty: bool = False, password: str | None = None) -> Term:
+async def connect(port: int, username: str, key=None, pty: bool = False, password: str | None = None,
+                  term_type: str | None = None, size: tuple[int, int] | None = None) -> Term:
     conn = await asyncssh.connect(
         "127.0.0.1", port, username=username, client_keys=[key] if key else [],
         known_hosts=None, agent_path=None, password=password, kbdint_auth=False,
     )
-    proc = await conn.create_process(term_type="xterm" if pty else None, encoding="utf-8")
+    proc = await conn.create_process(term_type=term_type or ("xterm" if pty else None),
+                                     term_size=size, encoding="utf-8")
     return Term(conn, proc)
 
 

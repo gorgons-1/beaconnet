@@ -1,6 +1,6 @@
 # BeaconNet
 
-**BeaconNet** is a network of independent, volunteer-run emergency bulletin boards for
+**BeaconNet** is a network of independent, volunteer-run bulletin boards for
 amateur radio operators anywhere in the world. Each node is a terminal BBS in the style
 of LinBPQ, BPQMail and LinFBB, and nodes link up to pass bulletins and mail along, like
 beacon fires from hill to hill. A node runs on a Raspberry Pi 5, or any 64-bit Debian
@@ -32,6 +32,11 @@ ssh -p 2222 <username>@<node>   # log in: automatic with your device's key, else
 Sysops log in the same way. An administrator connecting from the local network
 (10.x, 172.16-31.x, 192.168.x) gets an extra **S. Sysop Menu** to approve users, moderate
 and check the node. From the internet the same account sees only the normal menu.
+
+**Commodore 64 and other 40-column screens:** the BBS fits itself to 40 columns, in plain
+ASCII with no colour codes, when your SSH client reports a narrow screen or a terminal type
+such as `c64` or `petscii`. Press **W** at the main menu to switch between 40 and 80
+columns by hand.
 
 ### On your computer: BeaconNet Desktop
 
@@ -148,7 +153,7 @@ ansible/             optional: deploy to several nodes from a controller
 
 | Phase | |
 |---|---|
-| 1: local BBS (users, boards, emergency bulletins, mail, admin, backups) | done |
+| 1: local BBS (users, boards, priority bulletins, mail, admin, backups) | done |
 | 2: store-and-forward mesh between nodes, updates from GitHub | done |
 | 3: AX.25 packet radio (Dire Wolf / KISS TNC) | planned ([docs/radio-integration.md](docs/radio-integration.md)) |
 | 4: UPS / solar power monitoring | planned |

@@ -2,6 +2,20 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.8.0 - 40-column screens (Commodore 64)
+
+* The terminal BBS fits 40-column screens. It switches automatically when the SSH client
+  reports a screen narrower than 80 columns, or a terminal type such as `c64`, `c128`,
+  `commodore` or `petscii` (which also turns off ANSI codes). **W** at the main menu
+  switches between 40 and 80 columns by hand.
+* At 40 columns, all text is word-wrapped one column short of the edge, so a C64 doesn't
+  double-space it. Characters outside ASCII are folded (accents dropped, smart quotes
+  straightened), and the bulletin, mail and member lists and the help screen have
+  compact layouts.
+* Wording: BeaconNet is no longer described as an "emergency" network ("Packet Radio
+  BBS Network"). The EMERGENCY board and priority, and the notice to call your local
+  emergency number, are unchanged.
+
 ## 1.7.0 - member list for mail
 
 * Approved users can see who they can send private mail to on the node: username,

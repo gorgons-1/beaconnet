@@ -5,7 +5,7 @@ from __future__ import annotations
 from bbs_gateway import sysop
 from bbs_gateway.client import ApiError, Session
 from bbs_gateway.sshserver import BBSServer, Gateway
-from bbs_gateway.term import WIDTH, Disconnect, Term, box, c, short_time, wrap
+from bbs_gateway.term import Disconnect, Term, box, c, cols, rule, short_time, wrap
 
 PRIO_TAG = {"EMERGENCY": "[EMRG]", "PRIORITY": "[PRIO]", "ROUTINE": ""}
 MAX_BODY = 8000
@@ -13,17 +13,17 @@ MAX_BODY = 8000
 
 def _welcome(t: Term, info: dict, me: dict) -> None:
     t.line("")
-    t.lines(box(["", "BEACONNET", "Emergency Packet Radio BBS Network", "", c(info.get("node_name") or ""), ""]))
+    t.lines(box(["", "BEACONNET", "Packet Radio BBS" if cols() < 80 else "Packet Radio BBS Network", "", c(info.get("node_name") or "")[:cols() - 5], ""]))
     t.line("")
     t.line(f"Node: {c(info['node_id'])}")
     t.line(f"Status: {c(info['status'])}")
     t.line("Connection: SSH")
     if me.get("username"):
         call = f" ({c(me['callsign'])})" if me.get("callsign") else ""
-        t.line(f"Logged in: {c(me['username'])}{call}  Account: {c(me['status'])}")
+        t.line(f"Logged in: {c(me['username'])}{call}" + ("\n" if cols() < 80 else "  ") + f"Account: {c(me['status'])}")
         if me.get("status") == "PENDING":
-            t.line("Your registration is waiting for a sysop to approve it. You can read public")
-            t.line("bulletins meanwhile; posting and mail open once you're approved.")
+            t.lines(wrap("Your registration is waiting for a sysop to approve it. You can read public "
+                         "bulletins meanwhile; posting and mail open once you're approved."))
         elif me.get("status") == "SUSPENDED":
             t.line("This account is SUSPENDED: read-only access. Contact the sysop.")
         if me.get("unread_mail"):
@@ -36,10 +36,14 @@ def _msg_line(m: dict, show_board: bool) -> str:
     tag = PRIO_TAG.get(m.get("priority", "ROUTINE"), "")
     if m.get("expired"):
         tag = "[EXPD]"
-    board = f"{c(m['board'])[:10]:<10} " if show_board else ""
     subj = c(m["subject"])
+    if cols() < 80:                       # 40 columns: number, sender, tag, subject
+        head = f"{mark}{m['number']:>5} {who[:8]:<8} "
+        room = cols() - 1 - len(head) - (len(tag) + 1 if tag else 0)
+        return head + (tag + " " if tag else "") + subj[:max(8, room)]
+    board = f"{c(m['board'])[:10]:<10} " if show_board else ""
     head = f"{mark}{m['number']:>6} {short_time(m['created_at'])} {who:<9} {board}"
-    room = WIDTH - 1 - len(head) - (len(tag) + 1 if tag else 0)
+    room = cols() - 1 - len(head) - (len(tag) + 1 if tag else 0)
     return head + (tag + " " if tag else "") + subj[:max(10, room)]
 
 
@@ -68,9 +72,9 @@ async def read_message(t: Term, s: Session, number: int, me: dict) -> None:
     if m.get("parent_number"):
         lines.append(f"In reply to: #{m['parent_number']}")
     lines.append(f"Subj: {c(m['subject'])}")
-    lines.append("-" * (WIDTH - 1))
+    lines.append(rule())
     lines.extend(wrap(m["body"]))
-    lines.append("-" * (WIDTH - 1))
+    lines.append(rule())
     if m.get("disclaimer"):
         lines.extend(wrap(m["disclaimer"]))
     await t.page(lines)
@@ -102,7 +106,10 @@ async def list_messages(t: Term, s: Session, me: dict, board: str | None) -> Non
         if not msgs:
             t.line("No messages here yet.")
         else:
-            t.line(f" {'Msg#':>6} {'Date':<12} {'From':<9} " + ("Board      " if not board else "") + "Subject")
+            if t.narrow:
+                t.line(f" {'Msg#':>5} {'From':<8} Subject")
+            else:
+                t.line(f" {'Msg#':>6} {'Date':<12} {'From':<9} " + ("Board      " if not board else "") + "Subject")
             for m in msgs:
                 t.line(_msg_line(m, show_board=not board))
             if me.get("can_post"):
@@ -283,7 +290,7 @@ async def read_mail(t: Term, s: Session, pm_id: int) -> None:
         return await _error(t, exc)
     lines = ["", t.bold(f"Private message {m['id']}"), f"From: {c(m['from'])}", f"To:   {c(m['to'])}",
              f"Date: {c(m['created_at'])}  State: {c(m['delivery_state'])}", f"Subj: {c(m['subject'])}",
-             "-" * (WIDTH - 1), *wrap(m["body"]), "-" * (WIDTH - 1)]
+             rule(), *wrap(m["body"]), rule()]
     await t.page(lines)
     ans = (await t.readline("R=reply, A=archive, D=delete, Enter=back: ", 5)).upper()
     try:
@@ -313,7 +320,10 @@ async def member_list(t: Term, s: Session, pick: bool = False) -> None:
     for i in range(0, len(users), 20):
         for u in users[i:i + 20]:
             extra = " ".join(x for x in (u["callsign"], "sysop" if u["sysop"] else "") if x)
-            t.line(f"  {c(u['username'])[:20]:<20} {c(u['display_name'] or '')[:30]:<30} {extra}")
+            if t.narrow:
+                t.line(f" {c(u['username'])[:14]:<14} {c(u['display_name'] or '')[:t.width - 26]:<{t.width - 26}} {extra}"[:t.width - 1])
+            else:
+                t.line(f"  {c(u['username'])[:20]:<20} {c(u['display_name'] or '')[:30]:<30} {extra}")
         if i + 20 < len(users):
             if (await t.readline("Enter=more, Q=stop: ", 2)).upper() == "Q":
                 break
@@ -336,7 +346,10 @@ async def mail_menu(t: Term, s: Session, me: dict) -> None:
         for m in data["messages"]:
             mark = "*" if folder == "inbox" and not m["read"] else " "
             other = m["from"] if m["folder"] == "inbox" else f"to {m['to']}"
-            t.line(f"{mark}{m['id']:>6} {short_time(m['created_at'])} {c(other)[:14]:<14} {c(m['subject'])[:44]}")
+            if t.narrow:
+                t.line(f"{mark}{m['id']:>4} {c(other)[:11]:<11} {c(m['subject'])[:t.width - 19]}")
+            else:
+                t.line(f"{mark}{m['id']:>6} {short_time(m['created_at'])} {c(other)[:14]:<14} {c(m['subject'])[:44]}")
         ans = (await t.readline("number=read, I=inbox, S=sent, A=archive, C=compose, M=members, Q=back: ", 10)).upper()
         if ans.isdigit():
             await read_mail(t, s, int(ans))
@@ -552,7 +565,9 @@ Connecting
 Menus
   Type the number or letter shown and press Enter. Q goes back or disconnects.
   At the menu prompt you can also type:  R <number>  read a message,
-  L  list recent bulletins,  A  turn ANSI bold on/off.
+  L  list recent bulletins,  A  turn ANSI bold on/off,
+  W  switch between 80 and 40 columns (Commodore 64 and other small screens;
+     chosen automatically when your terminal says it's narrow).
 
 Writing messages
   Type your text line by line. End with /EX on a line by itself (traditional
@@ -568,6 +583,36 @@ Rules
 Emergencies
   This BBS is not an official emergency service and delivery is not
   guaranteed. In an emergency call your local emergency number (112, 911, 999...).
+"""
+    if t.narrow:
+        text = f"""HELP
+
+Visitors:
+  ssh -p {p} guest@{h}
+Register:
+  ssh -p {p} new@{h}
+Approved users:
+  ssh -p {p} <username>@{h}
+
+Type the number or letter shown and
+press Enter. Q goes back/disconnects.
+At the menu you can also type:
+  R <n>  read message number n
+  L      list recent bulletins
+  W      80 columns / 40 columns
+
+Writing: type line by line, end with
+/EX on a line of its own. /ABORT
+cancels.
+
+Posting and mail need an account a
+sysop has approved. Messages may be
+relayed by amateur radio: public, no
+business traffic, nothing secret.
+
+Not an official emergency service.
+In an emergency call your local
+emergency number (112, 911, 999...).
 """
     await t.page(text.splitlines())
 
@@ -595,7 +640,7 @@ async def run(gw: Gateway, t: Term, s: Session, server: BBSServer) -> None:
             items.append("S. Sysop Menu")
         t.lines(items)
         t.line("")
-        t.line("Q. Disconnect")
+        t.line(f"W. {'80' if t.narrow else '40'} columns    Q. Disconnect")
         t.line("")
         raw = await t.readline("Selection: ", 20)
         ans = raw.upper()
@@ -617,6 +662,10 @@ async def run(gw: Gateway, t: Term, s: Session, server: BBSServer) -> None:
                     t.error("Your session has ended. Please reconnect.")
                     return
                 await _error(t, exc)
+            continue
+        if ans == "W":
+            t.set_width(80 if t.narrow else 40, fixed=True)
+            t.line(f"Screen width: {t.width} columns.")
             continue
         if ans == "A":
             if t.has_pty:

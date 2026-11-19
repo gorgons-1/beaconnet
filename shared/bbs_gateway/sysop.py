@@ -7,7 +7,7 @@ from __future__ import annotations
 import json
 
 from .client import ApiError, Session
-from .term import WIDTH, Term, c, short_time, wrap
+from .term import Term, c, rule, short_time, wrap
 
 
 async def _err(t: Term, exc: ApiError) -> None:
@@ -144,7 +144,7 @@ async def moderate_one(t: Term, s: Session, number: int) -> None:
         return await _err(t, exc)
     lines = ["", f"#{m['number']} {c(m['board'])} from {c(m['author'])} ({c(m.get('callsign') or '-')}) {c(m['created_at'])}",
              f"Status: {c(m['status'])}" + (f" - {c(m['moderation_reason'])}" if m.get("moderation_reason") else ""),
-             f"Subj: {c(m['subject'])}", "-" * (WIDTH - 1), *wrap(m["body"]), "-" * (WIDTH - 1)]
+             f"Subj: {c(m['subject'])}", rule(), *wrap(m["body"]), rule()]
     await t.page(lines)
     ans = (await t.readline("H=hide, U=unhide, D=delete permanently, Enter=back: ", 5)).upper()
     action = {"H": "hide", "U": "restore", "D": "delete"}.get(ans)

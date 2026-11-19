@@ -13,7 +13,7 @@ def build() -> Gateway:
     cfg = GatewayConfig.from_env("ssh", 2222, NO_AUTH_USERS)
     cfg.banner = (
         "BeaconNet\n"
-        f"Visitors: ssh -p {cfg.public_port} guest@{cfg.public_host}   "
+        f"Visitors:    ssh -p {cfg.public_port} guest@{cfg.public_host}\n"
         f"New account: ssh -p {cfg.public_port} new@{cfg.public_host}\n"
     )
     return Gateway(cfg=cfg, api=CoreAPI(cfg.core_url, cfg.token), app=menu, register_app=register_only,
