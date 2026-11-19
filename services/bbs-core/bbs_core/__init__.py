@@ -1,1 +1,1 @@
-"""Scotland Emergency Packet Radio BBS - core service."""
+"""BeaconNet - core service."""

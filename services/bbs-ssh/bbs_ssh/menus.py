@@ -12,7 +12,7 @@ MAX_BODY = 8000
 
 def _welcome(t: Term, info: dict, me: dict) -> None:
     t.line("")
-    t.lines(box(["", "SCOTLAND EMERGENCY PACKET RADIO BBS", "", "Independent Communications", ""]))
+    t.lines(box(["", "BEACONNET", "Emergency Packet Radio BBS Network", "", c(info.get("node_name") or ""), ""]))
     t.line("")
     t.line(f"Node: {c(info['node_id'])}")
     t.line(f"Status: {c(info['status'])}")
@@ -209,11 +209,11 @@ async def post_flow(t: Term, s: Session, me: dict, board: str | None = None, rep
     extra: dict = {}
     if b["emergency"]:
         t.lines(wrap("EMERGENCY board: for real emergency and priority traffic only. This BBS is NOT an official "
-                     "emergency service - in an emergency call 999 or 112. Traffic may later be relayed over amateur "
+                     "emergency service - in an emergency call your local emergency number (112, 911, 999...). Traffic may later be relayed over amateur "
                      "radio, where it is public and must follow your licence conditions."))
         prio = (await t.ask("Priority - R=routine, P=priority, E=emergency [R]: ", 2)).upper()
         extra["priority"] = {"E": "EMERGENCY", "P": "PRIORITY"}.get(prio, "ROUTINE")
-        extra["area"] = await t.ask("Geographic area (e.g. Highland, Glasgow, Skye): ", 40)
+        extra["area"] = await t.ask("Geographic area (e.g. town, county or region): ", 40)
         hours = await t.ask("Expires after how many hours? [72]: ", 4)
         if hours:
             if not hours.isdigit():
@@ -469,7 +469,7 @@ Rules
 
 Emergencies
   This BBS is not an official emergency service and delivery is not
-  guaranteed. In an emergency call 999 or 112.
+  guaranteed. In an emergency call your local emergency number (112, 911, 999...).
 """
     await t.page(text.splitlines())
 

@@ -323,7 +323,7 @@ async def config(t: Term, s: Session) -> None:
 async def run(gw: Gateway, t: Term, s: Session, server: BBSServer) -> None:
     me = await s.get("/v1/sessions/me")
     t.line("")
-    t.line(t.bold("SCOTLAND BBS - ADMINISTRATION"))
+    t.line(t.bold("BEACONNET - ADMINISTRATION"))
     t.line(f"Administrator: {c(me['username'])}   (every action here is recorded in the audit log)")
     menu = {
         "1": lambda: user_list(t, s, "PENDING", "Pending registrations"),

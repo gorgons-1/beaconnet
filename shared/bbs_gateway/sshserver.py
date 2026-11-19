@@ -232,7 +232,7 @@ async def start(gw: Gateway, host: str = "0.0.0.0") -> asyncssh.SSHAcceptor:
         login_timeout=gw.cfg.login_timeout,
         keepalive_interval=60,
         keepalive_count_max=3,
-        server_version="ScotlandBBS",
+        server_version="BeaconNet",
     )
 
 

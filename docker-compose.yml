@@ -1,4 +1,4 @@
-# Scotland Emergency Packet Radio BBS.
+# BeaconNet.
 #
 #   Internet / LAN ──ssh :2222──► bbs-ssh ───┐ core-public (internal)
 #   Pi only (127.0.0.1) ─ssh :2223─► bbs-admin ─┤ core-admin (internal)

@@ -9,7 +9,7 @@
 #   enabled:     false = keep the entry but don't link
 #
 # peers:
-#   - id: SCOTLAND-NORTH-01
+#   - id: BEACON-NORTH-01
 #     name: Inverness node
 #     address: north.example.org
 #     port: 2224

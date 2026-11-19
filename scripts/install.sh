@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Scotland Emergency Packet Radio BBS - install / reinstall / update on a Raspberry Pi 5
+# BeaconNet - install / reinstall / update on a Raspberry Pi 5
 # (Raspberry Pi OS Lite 64-bit, Debian bookworm or trixie) or any arm64/x86-64 Debian box.
 #
 #   sudo ./scripts/install.sh                          # interactive: asks for node id and first admin
@@ -177,14 +177,14 @@ done < .env.example
 # Node id: must be unique in the mesh, so ask on a first install.
 if [[ -z "$NODE_ID" && $FRESH_ENV -eq 1 && -t 0 ]]; then
   suggest=$(hostname -s | tr 'a-z_' 'A-Z-' | tr -cd 'A-Z0-9-')
-  [[ ${#suggest} -ge 3 ]] || suggest=SCOTLAND-NODE-01
-  echo "    Every node in the mesh needs its own id (A-Z 0-9 -, 3-32 chars), e.g. GM4ABC-1 or SCOTLAND-NORTH-01."
+  [[ ${#suggest} -ge 3 ]] || suggest=BEACON-NODE-01
+  echo "    Every node in the mesh needs its own id (A-Z 0-9 -, 3-32 chars), e.g. GM4ABC-1 or BEACON-NORTH-01."
   while :; do
     read -rp "    Node id [$suggest]: " ans; ans=${ans:-$suggest}; ans=${ans^^}
     [[ "$ans" =~ ^[A-Z0-9][A-Z0-9-]{2,31}$ ]] && { NODE_ID=$ans; break; }
     echo "    not valid - use A-Z, 0-9 and '-', 3-32 characters"
   done
-  read -rp "    Node name shown to users [Scotland Emergency Packet Radio BBS]: " NODE_NAME
+  read -rp "    Node name shown to users [BeaconNet BBS]: " NODE_NAME
 fi
 [[ -n "$NODE_ID" ]] && { [[ "$NODE_ID" =~ ^[A-Z0-9][A-Z0-9-]{2,31}$ ]] || die "bad node id $NODE_ID"; setenv BBS_NODE_ID "$NODE_ID"; ok "node id $NODE_ID"; }
 NODE_NAME=$(printf '%s' "$NODE_NAME" | tr -cd "A-Za-z0-9 .,()-" | cut -c1-60)
@@ -325,7 +325,7 @@ SSH_OPTS=(-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMo
 # --- 11. guest access ---------------------------------------------------------------
 step "11/13 Verifying guest terminal access"
 out=$(printf 'Q\n' | timeout 30 ssh -T "${SSH_OPTS[@]}" -p "${BBS_SSH_PORT:-2222}" guest@127.0.0.1 2>&1 || true)
-grep -q "SCOTLAND EMERGENCY PACKET RADIO BBS" <<<"$out" || { echo "$out" | tail -5; die "guest login did not show the BBS"; }
+grep -q "BEACONNET" <<<"$out" || { echo "$out" | tail -5; die "guest login did not show the BBS"; }
 ok "guest session shows the BBS menu"
 out=$(timeout 20 ssh -T "${SSH_OPTS[@]}" -p "${BBS_SSH_PORT:-2222}" guest@127.0.0.1 id 2>&1 || true)
 grep -q "uid=" <<<"$out" && die "a command ran on the gateway!"
@@ -375,7 +375,7 @@ set -a; # shellcheck disable=SC1091
 cat <<EOF
 
 =====================================================================
- Scotland Emergency Packet Radio BBS ${VERSION} is running on node ${BBS_NODE_ID}
+ BeaconNet ${VERSION} is running on node ${BBS_NODE_ID}
 
  Visitors:        ssh -p ${BBS_SSH_PORT:-2222} guest@${BBS_PUBLIC_HOST}
  Register:        ssh -p ${BBS_SSH_PORT:-2222} new@${BBS_PUBLIC_HOST}

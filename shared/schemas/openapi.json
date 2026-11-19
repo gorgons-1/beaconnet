@@ -1,7 +1,7 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "Scotland BBS internal API",
+    "title": "BeaconNet internal API",
     "description": "Internal versioned API (v1). Only reachable on the internal Docker networks.\n\nEvery request carries two credentials:\n  X-Service-Token  - which gateway is calling (ssh, admin or sync); one token per gateway.\n  Authorization    - 'Bearer <session token>' for the person using that gateway.\nbbs-core decides what the person may do; gateways are never trusted for identity or rights.\n\nThe sync token opens only the /v1/sync/* routes (node-to-node mesh); it cannot create\nor use user sessions.\n",
     "version": "1.0.0"
   },

@@ -9,7 +9,7 @@ set -a; # shellcheck disable=SC1091
 problems=0
 bad() { echo "  PROBLEM: $*"; problems=$((problems + 1)); }
 
-echo "Scotland BBS health - $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(hostname)"
+echo "BeaconNet health - $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(hostname)"
 echo "Containers:"
 for svc in bbs-core bbs-ssh bbs-admin bbs-sync; do
   st=$(docker compose ps --format '{{.Health}} {{.State}} {{.Status}}' "$svc" 2>/dev/null || true)
@@ -25,7 +25,7 @@ fi
 
 out=$(printf 'Q\n' | timeout 20 ssh -T -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o BatchMode=yes \
       -o LogLevel=ERROR -p "${BBS_SSH_PORT:-2222}" guest@127.0.0.1 2>&1 || true)
-if grep -q "SCOTLAND EMERGENCY PACKET RADIO BBS" <<<"$out"; then echo "Guest login: ok"; else bad "guest login failed"; fi
+if grep -q "BEACONNET" <<<"$out"; then echo "Guest login: ok"; else bad "guest login failed"; fi
 
 DIR=${BBS_BACKUP_DIR:-/var/backups/scotland-bbs}
 if [[ -r "$DIR/status.json" ]]; then

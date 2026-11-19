@@ -14,7 +14,7 @@ async def test_guest_menu_and_reading(gateways, bbs, admin_key):
     ssh_port, _, _ = gateways
     t = await connect(ssh_port, "guest")
     screen = await t.expect("Selection:")
-    assert "SCOTLAND EMERGENCY PACKET RADIO BBS" in screen and "Node: SCOTLAND-HUB-01" in screen
+    assert "BEACONNET" in screen and "Node: BEACON-HUB-01" in screen
     assert "3. Register New Account" in screen and "Connection: SSH" in screen
     t.send("2")
     screen = await t.expect("(Q=back):")
@@ -27,7 +27,7 @@ async def test_guest_menu_and_reading(gateways, bbs, admin_key):
     await t.expect("Selection:")
     t.send("5")
     screen = await t.expect("-- press Enter --")
-    assert "999 or 112" in screen
+    assert "local emergency number" in screen
     t.send("")
     await t.expect("Selection:")
     t.send("Q")
@@ -70,7 +70,7 @@ async def test_full_registration_approval_and_posting(gateways, bbs):
 
     a = await connect(admin_port, "sysop9", admin_key)
     screen = await a.expect("Selection:")
-    assert "SCOTLAND BBS - ADMINISTRATION" in screen and "1. Pending Registrations (1)" in screen
+    assert "BEACONNET - ADMINISTRATION" in screen and "1. Pending Registrations (1)" in screen
     a.send("1")
     screen = await a.expect("Q=back:")
     assert "hamish" in screen

@@ -2,6 +2,18 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.2.0 - renamed to BeaconNet
+
+* The project is now called **BeaconNet**, a name for operators anywhere in the world.
+  The banner, menus, docs and defaults no longer assume Scotland or the UK.
+* The emergency notice says to call your local emergency number (112, 911, 999...)
+  instead of only 999/112.
+* New installs get a REGIONAL board instead of SCOTLAND, and example node ids look like
+  `BEACON-HUB-01`.
+* Nothing changes for an existing node: its node id, node name, boards, data, install
+  folder (`/opt/scotland-bbs`) and peer cards all stay as they are, and nodes on 1.1.0
+  and 1.2.0 link with each other.
+
 ## 1.1.0 - mesh and updates
 
 * **Mesh:** a new `bbs-sync` service links nodes over SSH on port 2224, with pinned

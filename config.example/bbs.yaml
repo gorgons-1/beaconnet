@@ -1,12 +1,12 @@
-# Scotland Emergency Packet Radio BBS - node configuration (no secrets in here).
+# BeaconNet - node configuration (no secrets in here).
 # Read by bbs-core at start-up and validated; a bad value stops the service with a
 # clear error instead of running half-configured. Environment variables in .env
 # override node.id and node.name (BBS_NODE_ID / BBS_NODE_NAME).
 
 node:
-  id: SCOTLAND-HUB-01          # unique across the network: A-Z 0-9 and '-', 3-32 chars
-  name: Scotland Emergency Packet Radio BBS
-  location: Scotland
+  id: BEACON-HUB-01          # unique across the network: A-Z 0-9 and '-', 3-32 chars
+  name: BeaconNet BBS
+  location: ""                 # town / region shown in System Information (optional)
   sysop: ""                    # sysop callsign shown in System Information (optional)
 
 guest:

@@ -151,7 +151,7 @@ def test_backup_restores_on_replacement_host(bbs, env, tmp_path, ssh_api, active
 def test_config_validation(env, tmp_path):
     cfg = Path(env["BBS_CONFIG_DIR"])
     good = (cfg / "bbs.yaml").read_text()
-    for bad in (good.replace("id: SCOTLAND-HUB-01", "id: bad id"),
+    for bad in (good.replace("id: BEACON-HUB-01", "id: bad id"),
                 good.replace("guest_idle_timeout_s: 600", "guest_idle_timeout_s: 5"),
                 good + "\nunknown_section: {}\n",
                 "node: [not, a, mapping]\n"):

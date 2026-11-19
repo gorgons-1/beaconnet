@@ -12,7 +12,7 @@ NO_AUTH_USERS = {"guest": "guest", "bbs": "guest", "new": "register", "register"
 def build() -> Gateway:
     cfg = GatewayConfig.from_env("ssh", 2222, NO_AUTH_USERS)
     cfg.banner = (
-        "Scotland Emergency Packet Radio BBS\n"
+        "BeaconNet\n"
         f"Visitors: ssh -p {cfg.public_port} guest@{cfg.public_host}   "
         f"New account: ssh -p {cfg.public_port} new@{cfg.public_host}\n"
     )

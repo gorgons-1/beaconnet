@@ -41,7 +41,7 @@ STARTED = time.time()
 
 EMERGENCY_DISCLAIMER = (
     "This BBS is run by volunteers. It is NOT an official emergency service and delivery "
-    "is not guaranteed. In an emergency call 999 or 112."
+    "is not guaranteed. In an emergency call your local emergency number (112, 911, 999...)."
 )
 
 

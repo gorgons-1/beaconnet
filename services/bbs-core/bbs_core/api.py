@@ -115,7 +115,7 @@ class BoardIn(_In):
 
 def create_app(bbs: BBS) -> FastAPI:
     app = FastAPI(
-        title="Scotland BBS internal API", version="1.0.0",
+        title="BeaconNet internal API", version="1.0.0",
         docs_url=None, redoc_url=None, openapi_url=None,  # schema is exported by the CLI, not served
     )
     app.state.bbs = bbs

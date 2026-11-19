@@ -33,13 +33,13 @@ sudo /opt/scotland-bbs/scripts/peer-card.sh
 ```
 
 ```text
-SCOTBBS-PEER/1 GM4ABC-1 bbs.example.org 2224 ssh-ed25519 AAAAC3Nza...  Highland Node
+SCOTBBS-PEER/1 GM4ABC-1 bbs.example.org 2224 ssh-ed25519 AAAAC3Nza...  Hilltop Node
 ```
 
 Send your card to the other sysop and get theirs. Then add theirs:
 
 ```sh
-sudo /opt/scotland-bbs/scripts/add-peer.sh 'SCOTBBS-PEER/1 GM4XYZ-1 - 2224 ssh-ed25519 AAAA... Fife Node'
+sudo /opt/scotland-bbs/scripts/add-peer.sh 'SCOTBBS-PEER/1 GM4XYZ-1 - 2224 ssh-ed25519 AAAA... Valley Node'
 ```
 
 That's all. Both sysops must add each other. Then check the admin console's **Connected
@@ -88,7 +88,7 @@ After changing `.env`, run `docker compose up -d`, then hand out your card again
 
 Every node id must be unique across the mesh, because mail is addressed `user@NODE-ID`.
 A good scheme is the sysop's callsign plus a number (`GM4ABC-1`), or a region
-(`SCOTLAND-NORTH-01`). The installer asks for one on a first install. Don't change it
+(`BEACON-NORTH-01`). The installer asks for one on a first install. Don't change it
 later: peers know you by it, so a change means swapping cards again.
 
 ## Trust and moderation

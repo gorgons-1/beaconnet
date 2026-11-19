@@ -26,7 +26,7 @@ e.g. `GM4ABC-1`), the first admin's username, callsign and **public** key. You c
 give them on the command line instead:
 
 ```sh
-sudo ~/scotland-bbs/scripts/install.sh --node-id GM4ABC-1 --node-name "Highland Node" \
+sudo ~/scotland-bbs/scripts/install.sh --node-id GM4ABC-1 --node-name "Hilltop Node" \
      --admin-user alice --admin-callsign GM4ABC --admin-key-file ~/admin_key.pub
 ```
 

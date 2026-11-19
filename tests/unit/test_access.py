@@ -10,7 +10,7 @@ def test_guest_can_read_public_bulletins(ssh_api, active_user):
     n = r.json()["number"]
     g = ssh_api.guest()
     boards = ssh_api.call("GET", "/v1/boards", g).json()["boards"]
-    assert {"ANNOUNCEMENTS", "GENERAL", "SCOTLAND", "EMERGENCY", "TECHNICAL", "RADIO", "EQUIPMENT", "LOCAL-NODES"} <= {b["name"] for b in boards}
+    assert {"ANNOUNCEMENTS", "GENERAL", "REGIONAL", "EMERGENCY", "TECHNICAL", "RADIO", "EQUIPMENT", "LOCAL-NODES"} <= {b["name"] for b in boards}
     assert ssh_api.call("GET", "/v1/messages", g, params={"board": "GENERAL"}).json()["messages"][0]["number"] == n
     m = ssh_api.call("GET", f"/v1/messages/{n}", g).json()
     assert m["body"] == "First post"

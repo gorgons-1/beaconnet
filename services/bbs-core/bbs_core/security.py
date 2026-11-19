@@ -123,7 +123,7 @@ def sanitize_body(text: str, max_bytes: int) -> str:
 
 
 USERNAME_RE = re.compile(r"^[a-z][a-z0-9_-]{2,19}$")
-# Amateur callsigns: optional 1-2 char prefix + digit + 1-4 char suffix, e.g. GM4ABC, MM0XYZ,
+# Amateur callsigns: optional 1-2 char prefix + digit + 1-4 char suffix, e.g. GM4ABC, W1AW, VK2XYZ,
 # 2M0ABC, GS3XYZ. Stored upper case; an SSID ('-7') is a station, not a person, so not allowed.
 CALLSIGN_RE = re.compile(r"^(?=.{3,8}$)[A-Z0-9]{1,3}[0-9][A-Z]{1,4}$")
 RESERVED_NAMES = {
@@ -151,7 +151,7 @@ def validate_callsign(call: str | None) -> str | None:
     if not call:
         return None
     if not CALLSIGN_RE.match(call):
-        raise BBSError("invalid_callsign", "that doesn't look like an amateur callsign (e.g. GM4ABC, MM0XYZ)")
+        raise BBSError("invalid_callsign", "that doesn't look like an amateur callsign (e.g. GM4ABC, W1AW, VK2XYZ)")
     return call
 
 

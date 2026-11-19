@@ -332,7 +332,7 @@ async def start_server(state: State, host: str, port: int) -> asyncssh.SSHAccept
         process_factory=lambda p: serve_session(state, p),
         encoding="utf-8", line_editor=False, allow_pty=False, allow_scp=False, sftp_factory=None,
         agent_forwarding=False, x11_forwarding=False, login_timeout=30,
-        keepalive_interval=30, keepalive_count_max=3, server_version="ScotlandBBS-sync",
+        keepalive_interval=30, keepalive_count_max=3, server_version="BeaconNet-sync",
     )
 
 

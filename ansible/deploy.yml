@@ -1,5 +1,5 @@
 ---
-# Install or update the Scotland BBS on the nodes in inventory.ini.
+# Install or update BeaconNet on the nodes in inventory.ini.
 #
 #   cp ansible/inventory.example.ini ansible/inventory.ini    # then edit it
 #   ansible-playbook -i ansible/inventory.ini ansible/deploy.yml -K
@@ -9,7 +9,7 @@
 # It copies the project (never .env or secrets/) to a staging directory and runs
 # scripts/install.sh, which installs to /opt/scotland-bbs, keeps existing data and
 # secrets, rebuilds and restarts.
-- name: Scotland Emergency Packet Radio BBS
+- name: BeaconNet
   hosts: bbs_nodes
   become: true
   vars:

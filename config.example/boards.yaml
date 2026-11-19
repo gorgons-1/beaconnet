@@ -16,8 +16,8 @@ boards:
     description: General discussion
     post: users
     public: true
-  - name: SCOTLAND
-    description: News and events across Scotland
+  - name: REGIONAL
+    description: News and events in this node's region
     post: users
     public: true
   - name: EMERGENCY

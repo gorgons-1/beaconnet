@@ -14,7 +14,7 @@ ssh -p 2223 <admin>@127.0.0.1                      # on the Pi itself (needs the
 Your admin key must belong to an account with role `admin` and status `ACTIVE`.
 
 ```text
-SCOTLAND BBS - ADMINISTRATION
+BEACONNET - ADMINISTRATION
 
 1. Pending Registrations     approve / reject (and mark the callsign verified)
 2. Active Users              details, suspend, revoke keys, verify callsigns
@@ -30,7 +30,7 @@ SCOTLAND BBS - ADMINISTRATION
 
 ## Approving people
 
-Check the callsign before you approve: look it up in Ofcom's or the RSGB's records, or
+Check the callsign before you approve: look it up in your national licensing authority's records (Ofcom in the UK, the FCC in the US, ...), or
 ask the person on air. When you approve an account that claims a callsign, the console
 asks whether you have verified it. Only verified callsigns can be used as mail addresses,
 and unverified ones show with a `?` in lists. A callsign can belong to only one live

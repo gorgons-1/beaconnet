@@ -8,15 +8,15 @@ envelopes (`services/bbs-core/bbs_core/mesh.py`); bbs-sync carries them over SSH
 {
   "v": 1,
   "kind": "bulletin",                       // bulletin | private | receipt
-  "mid": "3f9c...e1@SCOTLAND-HUB-01",       // global id; never changes; dedup key
-  "origin_node": "SCOTLAND-HUB-01",
+  "mid": "3f9c...e1@BEACON-HUB-01",       // global id; never changes; dedup key
+  "origin_node": "BEACON-HUB-01",
   "destination": {"board": "EMERGENCY"},     // private: {"user","node"}; receipt: {"node"}
   "created_at": "2026-11-18T14:02:00Z",      // UTC, set once by the origin
   "expires_at": "2026-11-21T14:02:00Z",      // optional; expired envelopes are dropped
   "priority": "EMERGENCY",                   // ROUTINE | PRIORITY | EMERGENCY - queue order only
   "hop_count": 2,
   "hop_limit": 8,
-  "route": ["SCOTLAND-HUB-01", "SCOTLAND-CENTRAL-02"],
+  "route": ["BEACON-HUB-01", "BEACON-CENTRAL-02"],
   "payload": {"author": "alice", "callsign": "GM4AAA", "area": "Highland",
               "subject": "...", "body": "...", "parent_mid": null},
   "payload_sha256": "<hex sha256 of the canonical JSON of payload>"

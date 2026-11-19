@@ -43,7 +43,7 @@ container user. Compose mounts each one only into the services that need it, at
 
 ## Radio is public
 
-Amateur radio transmissions are not confidential, and UK licence conditions restrict
+Amateur radio transmissions are not confidential, and licence conditions in most countries restrict
 encryption and content. When radio arrives (Phase 3), nothing secret goes over RF: no
 keys, tokens, contact details or private mail without explicit policy and user consent.
 See [radio-integration.md](radio-integration.md).

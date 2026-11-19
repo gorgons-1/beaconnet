@@ -1,8 +1,10 @@
-# Scotland Emergency Packet Radio BBS
+# BeaconNet
 
-A terminal bulletin board system for amateur radio operators, in the style of LinBPQ,
-BPQMail and LinFBB. It runs on a Raspberry Pi 5, or any 64-bit Debian box, in Docker. It
-needs no cloud services and keeps working with no internet connection.
+**BeaconNet** is a network of independent, volunteer-run emergency bulletin boards for
+amateur radio operators anywhere in the world. Each node is a terminal BBS in the style
+of LinBPQ, BPQMail and LinFBB, and nodes link up to pass bulletins and mail along, like
+beacon fires from hill to hill. A node runs on a Raspberry Pi 5, or any 64-bit Debian
+box, in Docker. It needs no cloud services and keeps working with no internet connection.
 
 * People connect over **SSH** and use a classic menu. There are no passwords and no
   Linux shell.
@@ -16,7 +18,7 @@ needs no cloud services and keeps working with no internet connection.
   before every update.
 
 > This BBS is run by volunteers. It is **not** an official emergency service and
-> delivery is not guaranteed. In an emergency call **999 or 112**.
+> delivery is not guaranteed. In an emergency call your local emergency number (**112**, **911**, **999**, ...).
 
 ## Using it
 

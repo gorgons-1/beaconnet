@@ -25,7 +25,7 @@ def test_post_and_read_bulletin(ssh_api, active_user):
     r = post(ssh_api, s, subject="Net tonight", body="2m net at 20:00 on GB3XX")
     assert r.status_code == 200
     n, mid = r.json()["number"], r.json()["mid"]
-    assert mid.endswith("@SCOTLAND-HUB-01")
+    assert mid.endswith("@BEACON-HUB-01")
     m = ssh_api.call("GET", f"/v1/messages/{n}", s).json()
     for field in ("mid", "number", "origin_node", "author", "callsign", "board", "subject", "body", "created_at", "status"):
         assert field in m
@@ -136,7 +136,7 @@ def test_mail_folders_and_delete(ssh_api, active_user, bob):
 
 def test_mail_to_remote_node_not_yet(ssh_api, active_user):
     _, _, s = active_user
-    r = ssh_api.call("POST", "/v1/mail", s, json={"to": "bob@SCOTLAND-NORTH-01", "subject": "x", "body": "y"})
+    r = ssh_api.call("POST", "/v1/mail", s, json={"to": "bob@BEACON-NORTH-01", "subject": "x", "body": "y"})
     assert r.status_code == 400 and r.json()["error"]["code"] == "not_available"
 
 
@@ -228,8 +228,8 @@ def test_admin_health_and_status(admin_api, admin_session, ssh_api):
     assert h["database"]["integrity_check"] == "ok" and h["database"]["schema_version"] == 2
     assert admin_api.call("GET", "/v1/admin/queues", admin_session).json()["forwarding_enabled"] is False
     nodes = admin_api.call("GET", "/v1/admin/nodes", admin_session).json()["nodes"]
-    assert nodes[0]["node_id"] == "SCOTLAND-HUB-01" and nodes[0]["is_local"] == 1
+    assert nodes[0]["node_id"] == "BEACON-HUB-01" and nodes[0]["is_local"] == 1
     cfg = admin_api.call("GET", "/v1/admin/config", admin_session).json()
     assert "service_tokens" not in str(cfg).replace("services_with_tokens", "")
     info = ssh_api.call("GET", "/v1/system/info", ssh_api.guest()).json()
-    assert info["node_id"] == "SCOTLAND-HUB-01" and "999" in info["disclaimer"]
+    assert info["node_id"] == "BEACON-HUB-01" and "999" in info["disclaimer"]

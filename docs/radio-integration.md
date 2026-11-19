@@ -29,7 +29,7 @@ Anything that needs real authentication stays on SSH.
 
 ## Rules before anything transmits
 
-Document and check each of these against the current Ofcom amateur licence and guidance
+Document and check each of these against your country's amateur licence conditions and guidance (for example Ofcom in the UK)
 before enabling RF:
 
 * station identification and callsign use (the node's callsign in every frame or beacon)
