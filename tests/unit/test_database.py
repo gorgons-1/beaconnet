@@ -195,3 +195,14 @@ def test_openapi_schema_up_to_date(bbs):
 
     current = json.loads((ROOT / "shared/schemas/openapi.json").read_text())
     assert current == json.loads(json.dumps(openapi_schema(bbs)))
+
+
+def test_radio_settings_validated_but_not_enabled_yet(env):
+    from bbs_core.config import RadioCfg
+    import pydantic
+    r = RadioCfg(callsign="gm4abc-10", tnc="kiss-serial", serial_device="/dev/ttyUSB0", serial_baud=9600)
+    assert r.callsign == "GM4ABC-10" and r.enabled is False
+    for bad in ({"callsign": "GM4ABC-16"}, {"callsign": "TOOLONGCALL"}, {"callsign": "ABCDEF"},
+                {"tnc": "agw"}, {"serial_baud": 300}, {"enabled": True}):
+        with pytest.raises(pydantic.ValidationError):
+            RadioCfg(**bad)

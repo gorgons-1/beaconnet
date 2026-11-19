@@ -256,3 +256,22 @@ async def test_username_callsign_must_match_and_pending_can_edit(gateways, bbs, 
     assert (await call("profile", display_name="Pending person"))["ok"]   # PENDING users may edit details
     assert (await call("password", password="long enough pw"))["error"]["code"] == "forbidden"  # not yet approved
     conn.close()
+
+
+def test_desktop_radio_settings_saved_and_checked(tmp_path):
+    desk = load_desktop()
+    ok = desk.clean_radio({"my_call": "m7xyz", "bbs_call": "GM4ABC-10", "via": "gm4xyz-1, MB7ABC",
+                           "tnc": "kiss-tcp", "tnc_port": 8001, "check_minutes": 30})
+    assert ok["my_call"] == "M7XYZ" and ok["via"] == ["GM4XYZ-1", "MB7ABC"] and ok["tnc_host"] == "127.0.0.1"
+    ser = desk.clean_radio({"my_call": "M7XYZ", "bbs_call": "GM4ABC-10", "tnc": "kiss-serial",
+                            "serial_port": "COM3", "serial_baud": 9600})
+    assert ser["serial_port"] == "COM3"
+    for bad in ({"my_call": "", "bbs_call": "GM4ABC-10"}, {"my_call": "M7XYZ", "bbs_call": "GM4ABC-99"},
+                {"my_call": "M7XYZ", "bbs_call": "M7XYZ"}, {"my_call": "M7XYZ", "bbs_call": "GM4ABC", "via": "A1 B2 C3"},
+                {"my_call": "M7XYZ", "bbs_call": "GM4ABC", "tnc": "kiss-serial", "serial_port": "rm -rf"},
+                {"my_call": "M7XYZ", "bbs_call": "GM4ABC", "check_minutes": 1}):
+        with pytest.raises(ValueError):
+            desk.clean_radio(bad)
+    s = desk.Settings(tmp_path)
+    s.update(connection="radio", radio=ok)
+    assert desk.Settings(tmp_path)["radio"]["bbs_call"] == "GM4ABC-10"

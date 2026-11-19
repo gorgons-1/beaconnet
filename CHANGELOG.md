@@ -2,6 +2,16 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.6.0 - radio settings (Phase 3 pre-stage)
+
+* Packet radio settings can be filled in ahead of Phase 3. Nothing transmits yet.
+  * Node: a `radio:` section in `config/bbs.yaml` (station callsign, TNC: Dire Wolf
+    KISS-over-TCP or a serial TNC, beacon, max radio users). It's validated, and
+    `enabled: true` is refused until the radio service exists.
+  * BeaconNet Desktop 1.2.0: Settings > Connection > **Packet radio** (your callsign,
+    BBS callsign, digipeaters, TNC, check interval), validated and saved. It says
+    plainly that Radio mode connects from Phase 3.
+
 ## 1.5.0 - edit your details
 
 * Users change their own display name, callsign and contact details: in BeaconNet

@@ -109,6 +109,40 @@ class SysopCfg(_Strict):
         return out
 
 
+AX25_CALL_PATTERN = r"^(?=[A-Z0-9]*[0-9])[A-Z0-9]{1,6}(-([0-9]|1[0-5]))?$"
+
+
+class RadioCfg(_Strict):
+    """Packet radio (Phase 3). The settings can be filled in now; nothing transmits until
+    the bbs-radio service exists, so `enabled: true` is refused in this release."""
+    enabled: bool = False
+    callsign: str = Field(default="", max_length=9)          # the BBS's own station, e.g. GM4ABC-10
+    tnc: Literal["kiss-tcp", "kiss-serial"] = "kiss-tcp"
+    tnc_host: str = Field(default="127.0.0.1", pattern=r"^[A-Za-z0-9.:_-]{1,255}$")   # Dire Wolf
+    tnc_port: int = Field(default=8001, ge=1, le=65535)
+    serial_device: str = Field(default="", max_length=64)    # e.g. /dev/ttyUSB0
+    serial_baud: Literal[1200, 4800, 9600, 19200, 38400, 57600, 115200] = 9600
+    beacon_minutes: int = Field(default=0, ge=0, le=1440)    # 0 = no beacon; ID is still sent on every connect
+    max_users: int = Field(default=2, ge=1, le=10)            # simultaneous radio connections
+
+    @field_validator("callsign")
+    @classmethod
+    def _call(cls, v: str) -> str:
+        import re
+
+        v = v.strip().upper()
+        if v and not re.match(AX25_CALL_PATTERN, v):
+            raise ValueError("callsign must look like GM4ABC-10 (1-6 letters/digits, optional SSID 0-15)")
+        return v
+
+    @field_validator("enabled")
+    @classmethod
+    def _not_yet(cls, v: bool) -> bool:
+        if v:
+            raise ValueError("packet radio arrives in Phase 3; leave radio.enabled false for now")
+        return v
+
+
 class LoggingCfg(_Strict):
     level: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "INFO"
 
@@ -147,6 +181,7 @@ class BBSConfig(_Strict):
     logging: LoggingCfg = LoggingCfg()
     mesh: MeshCfg = MeshCfg()
     sysop: SysopCfg = SysopCfg()
+    radio: RadioCfg = RadioCfg()
 
 
 class BoardsFile(_Strict):

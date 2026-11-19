@@ -2,6 +2,21 @@
 
 This document is a plan; nothing in this release transmits.
 
+## Settings already in place (pre-stage)
+
+The settings for Phase 3 exist now, so nodes and users can fill them in ahead of time.
+They are checked when saved, and nothing transmits.
+
+* **Node:** the `radio:` section of `config/bbs.yaml` holds the BBS's own station
+  callsign (e.g. `GM4ABC-10`), the TNC (`kiss-tcp` to Dire Wolf on port 8001, or
+  `kiss-serial` with a device and speed), the beacon interval and the maximum number of
+  radio users. `enabled: true` is refused until the `bbs-radio` service exists.
+* **BeaconNet Desktop:** Settings > Connection > **Packet radio** holds your callsign,
+  the BBS callsign, up to two digipeaters, the TNC (Dire Wolf over TCP, or a serial TNC)
+  and how often to check for new messages (10 minutes to 4 hours). There's no password
+  and no frequency: the BBS knows you by your verified callsign, and the frequency is
+  set on the radio. Until Phase 3, Radio mode says it can't connect yet.
+
 ## Shape
 
 A new `bbs-radio` container runs **Dire Wolf** (a software TNC, with a USB sound card

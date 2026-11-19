@@ -66,5 +66,19 @@ sysop:
   menu_in_bbs: true
   allowed_networks: [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]
 
+radio:
+  # Packet radio (Phase 3, not built yet). You can fill these in now; nothing transmits
+  # in this release and 'enabled: true' is refused. Check your licence conditions
+  # (docs/radio-integration.md) before going on air.
+  enabled: false
+  callsign: ""                 # this BBS's station, e.g. GM4ABC-10
+  tnc: kiss-tcp                # kiss-tcp (Dire Wolf) or kiss-serial (hardware TNC)
+  tnc_host: 127.0.0.1
+  tnc_port: 8001               # Dire Wolf's KISS TCP port
+  serial_device: ""            # for kiss-serial, e.g. /dev/ttyUSB0
+  serial_baud: 9600
+  beacon_minutes: 0            # 0 = no beacon
+  max_users: 2                 # radio connections at once
+
 logging:
   level: INFO                  # DEBUG, INFO, WARNING, ERROR

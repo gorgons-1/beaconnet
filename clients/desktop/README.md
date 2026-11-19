@@ -67,6 +67,16 @@ stored.
 Your account needs a password for that first login. If you registered with a key, log
 in to the BBS once and set one under *My Account & Keys > P*.
 
+## Packet radio (coming with Phase 3)
+
+Settings > Connection has a **Packet radio** option for when your BBS is reachable only
+by radio. You enter your callsign, the BBS's callsign (e.g. `GM4ABC-10`), any digipeaters,
+your TNC (Dire Wolf on this computer, usually `127.0.0.1` port `8001`, or a hardware TNC
+on a serial port) and how often to check for messages. You can save these now, but
+BeaconNet nodes don't answer on radio until Phase 3, so use Internet / Wi-Fi for now.
+Over radio there's no password and no encryption: the BBS knows you by your verified
+callsign.
+
 ## Your account
 
 The **My account** tab lets you change your display name, callsign and contact details

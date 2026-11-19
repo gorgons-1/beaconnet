@@ -21,6 +21,7 @@ import asyncio
 import json
 import os
 import platform
+import re
 import secrets
 import shutil
 import subprocess
@@ -35,7 +36,7 @@ try:
 except ImportError:  # pragma: no cover - the launchers install it
     sys.exit("BeaconNet Desktop needs the 'asyncssh' package:  python -m pip install --user asyncssh")
 
-VERSION = "1.1.0"
+VERSION = "1.2.0"
 SUBSYSTEM = "beaconnet-client"
 POLL_SECONDS = 30
 
@@ -68,7 +69,9 @@ class Settings:
 
     DEFAULTS: dict[str, Any] = {"host": "", "port": 2222, "username": "", "host_key": None, "last_seen": None,
                                 "notify_bulletins": True, "notify_emergency": True, "notify_mail": True,
-                                "notify_registrations": True}
+                                "notify_registrations": True,
+                                # Radio mode (Phase 3): saved now, used once nodes answer on packet radio.
+                                "connection": "internet", "radio": {}}
 
     def __init__(self, home: Path) -> None:
         self.home = home
@@ -99,6 +102,56 @@ class Settings:
             except OSError:
                 pass
         self.update(username="", host_key=None, last_seen=None)
+
+
+# --- radio settings (Phase 3 pre-stage) ---------------------------------------------------
+
+# AX.25 station: 1-6 letters/digits with at least one digit, optional -SSID 0-15.
+AX25_CALL = re.compile(r"^(?=[A-Z0-9]*[0-9])[A-Z0-9]{1,6}(-(?:[0-9]|1[0-5]))?$")
+RADIO_DEFAULTS: dict[str, Any] = {"my_call": "", "bbs_call": "", "via": [], "tnc": "kiss-tcp",
+                                  "tnc_host": "127.0.0.1", "tnc_port": 8001, "serial_port": "", "serial_baud": 9600,
+                                  "check_minutes": 30}
+
+
+def clean_radio(d: dict) -> dict:
+    """Validate radio settings; raises ValueError with a message the page shows."""
+    r = dict(RADIO_DEFAULTS)
+    call = lambda v: str(v or "").strip().upper()  # noqa: E731
+    r["my_call"], r["bbs_call"] = call(d.get("my_call")), call(d.get("bbs_call"))
+    for k, label in (("my_call", "Your callsign"), ("bbs_call", "BBS callsign")):
+        if not AX25_CALL.match(r[k]):
+            raise ValueError(f"{label} must look like M7XYZ or GM4ABC-10 (SSID 0-15)")
+    if r["my_call"].split("-")[0] == r["bbs_call"].split("-")[0] and r["my_call"] == r["bbs_call"]:
+        raise ValueError("your callsign and the BBS callsign must differ")
+    via = d.get("via") or []
+    if isinstance(via, str):
+        via = [v for v in re.split(r"[\s,]+", via) if v]
+    via = [call(v) for v in via]
+    if len(via) > 2 or not all(AX25_CALL.match(v) for v in via):
+        raise ValueError("Via: up to 2 digipeater callsigns, e.g. GM4XYZ-1")
+    r["via"] = via
+    r["tnc"] = d.get("tnc") if d.get("tnc") in ("kiss-tcp", "kiss-serial") else "kiss-tcp"
+    if r["tnc"] == "kiss-tcp":
+        host = str(d.get("tnc_host") or "127.0.0.1").strip()
+        if not re.match(r"^[A-Za-z0-9.:_-]{1,255}$", host):
+            raise ValueError("TNC address: a host name or IP, e.g. 127.0.0.1 for Dire Wolf on this computer")
+        port = int(d.get("tnc_port") or 8001)
+        if not 1 <= port <= 65535:
+            raise ValueError("TNC port: 1-65535 (Dire Wolf's KISS port is 8001)")
+        r["tnc_host"], r["tnc_port"] = host, port
+    else:
+        sp = str(d.get("serial_port") or "").strip()
+        if not re.match(r"^(COM[0-9]{1,3}|/dev/[A-Za-z0-9._/-]{1,60})$", sp):
+            raise ValueError("Serial port: e.g. COM3 (Windows) or /dev/ttyUSB0 (Linux, macOS)")
+        baud = int(d.get("serial_baud") or 9600)
+        if baud not in (1200, 4800, 9600, 19200, 38400, 57600, 115200):
+            raise ValueError("Serial speed: one of 1200, 4800, 9600, 19200, 38400, 57600, 115200")
+        r["serial_port"], r["serial_baud"] = sp, baud
+    minutes = int(d.get("check_minutes") or 30)
+    if not 10 <= minutes <= 240:
+        raise ValueError("Check every: 10-240 minutes (the channel is shared, so don't call too often)")
+    r["check_minutes"] = minutes
+    return r
 
 
 # --- desktop notifications ----------------------------------------------------------------
@@ -326,7 +379,14 @@ class App:
         backoff = 5
         while True:
             try:
-                if self.link is None and self.s["host"]:
+                if self.s["connection"] == "radio":
+                    if self.link:
+                        self.link.close()
+                        self.link = None
+                    self.status = "radio (Phase 3)"
+                    self.error = ("Radio mode is set up and saved. It connects once BeaconNet nodes "
+                                  "answer on packet radio (Phase 3).")
+                elif self.link is None and self.s["host"]:
                     await self.connect()
                 if self.link is not None:
                     await self.check()
@@ -372,6 +432,7 @@ class App:
             "device_key": self.device_fingerprint(),
             "events": [e for e in self.events if e["seq"] > since],
             "notify": {k: s[k] for k in ("notify_bulletins", "notify_emergency", "notify_mail", "notify_registrations")},
+            "connection": s["connection"], "radio": {**RADIO_DEFAULTS, **(s["radio"] or {})},
         }
 
 
@@ -438,6 +499,18 @@ class Web:
         if path == "/api/logout":
             app.logout()
             return {"ok": True}
+        if path == "/api/connection":
+            mode = d.get("connection")
+            if mode not in ("internet", "radio"):
+                raise ValueError("connection must be internet or radio")
+            if mode == "radio":
+                app.s.update(radio=clean_radio(d.get("radio") or {}), connection="radio")
+            else:
+                app.s.update(connection="internet")
+                app.status = "connecting" if app.s["host"] else "not set up"
+                app.error = ""
+            app.wake.set()
+            return app.state(0)
         if path == "/api/notify":
             app.s.update(**{k: bool(v) for k, v in d.items() if k in Settings.DEFAULTS and k.startswith("notify_")})
             return {"ok": True}

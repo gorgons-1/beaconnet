@@ -202,6 +202,52 @@ const VIEWS = {
     return out;
   },
   async settings() {
+    const mode = S.connection || "internet";
+    const pick = (v, label) => { const r = $("input", {type: "radio", name: "conn", value: v}); r.checked = mode === v;
+      r.addEventListener("change", async () => { if (v === "internet") { await api("/api/connection", {connection: "internet"}); await poll(); } S.connection = v; render(); }); return $("label", {class: "chk"}, r, label); };
+    const top = panel($("h3", {}, "Connection"), $("div", {class: "grid"}, pick("internet", "Internet / Wi-Fi (SSH to the node)"), pick("radio", "Packet radio (AX.25)")));
+    if (mode === "radio") return [top, ...radioSettings()];
+    return [top, ...await internetSettings()];
+  },
+};
+function radioSettings() {
+  const r = S.radio || {};
+  const inp = (v, attrs = {}) => $("input", {value: v ?? "", ...attrs});
+  const my = inp(r.my_call, {maxlength: "9", placeholder: "M7XYZ"}), bbs = inp(r.bbs_call, {maxlength: "9", placeholder: "GM4ABC-10"});
+  const via = inp((r.via || []).join(" "), {placeholder: "optional, e.g. GM4XYZ-1"});
+  const tnc = $("select", {}, $("option", {value: "kiss-tcp"}, "Dire Wolf / KISS over TCP"), $("option", {value: "kiss-serial"}, "Hardware TNC / KISS on a serial port"));
+  tnc.value = r.tnc || "kiss-tcp";
+  const host = inp(r.tnc_host || "127.0.0.1"), port = inp(r.tnc_port || 8001, {inputmode: "numeric"});
+  const sp = inp(r.serial_port, {placeholder: "COM3 or /dev/ttyUSB0"});
+  const baud = $("select", {}, ...[1200, 4800, 9600, 19200, 38400, 57600, 115200].map(b => $("option", {value: String(b)}, String(b))));
+  baud.value = String(r.serial_baud || 9600);
+  const every = $("select", {}, ...[10, 15, 30, 60, 120, 240].map(m => $("option", {value: String(m)}, m < 60 ? `${m} minutes` : `${m / 60} hour${m > 60 ? "s" : ""}`)));
+  every.value = String(r.check_minutes || 30);
+  const tcpBox = $("div", {class: "grid"}, $("div", {}, $("label", {}, "TNC address"), host), $("div", {}, $("label", {}, "KISS port"), port));
+  const serBox = $("div", {class: "grid"}, $("div", {}, $("label", {}, "Serial port"), sp), $("div", {}, $("label", {}, "Speed (baud)"), baud));
+  const sync = () => { tcpBox.style.display = tnc.value === "kiss-tcp" ? "" : "none"; serBox.style.display = tnc.value === "kiss-serial" ? "" : "none"; };
+  tnc.addEventListener("change", sync); sync();
+  const msg = $("div", {});
+  const save = $("button", {class: "go", on: {click: async () => {
+    msg.replaceChildren();
+    try {
+      await api("/api/connection", {connection: "radio", radio: {my_call: my.value, bbs_call: bbs.value, via: via.value, tnc: tnc.value,
+        tnc_host: host.value, tnc_port: Number(port.value), serial_port: sp.value, serial_baud: Number(baud.value), check_minutes: Number(every.value)}});
+      await poll(); msg.replaceChildren("Saved."); S.connection = "radio";
+    } catch (e) { msg.replaceChildren(errBox(e)); }
+  }}}, "Save radio settings");
+  return [
+    panel($("div", {class: "err"}, "Coming with Phase 3: you can enter and save these now, but BeaconNet nodes don't answer on packet radio yet, so Radio mode can't connect. Switch back to Internet / Wi-Fi to use the app today.")),
+    panel($("h3", {}, "Stations"),
+      $("div", {class: "grid"}, $("div", {}, $("label", {}, "Your callsign (your login on radio)"), my), $("div", {}, $("label", {}, "BBS callsign"), bbs)),
+      $("label", {}, "Via digipeaters (optional, up to 2)"), via,
+      $("div", {class: "mute", style: "margin-top:6px"}, "No password is sent over radio: the BBS knows you by your verified callsign. Nothing is encrypted on air.")),
+    panel($("h3", {}, "Radio interface"), $("label", {}, "TNC"), tnc, tcpBox, serBox,
+      $("div", {class: "mute", style: "margin-top:6px"}, "Set the frequency on your radio (or in Dire Wolf), not here."),
+      $("label", {}, "Check for new messages every"), every, save, msg),
+  ];
+}
+async function internetSettings() {
     const host = $("input", {value: S.host || "", placeholder: "e.g. 192.168.1.50 or bbs.example.org"}), port = $("input", {value: S.port || 2222, inputmode: "numeric"});
     const user = $("input", {value: S.username || "", autocomplete: "username"}), pass = $("input", {type: "password", autocomplete: "current-password"});
     const remember = $("input", {type: "checkbox", checked: ""}), msg = $("div", {});
@@ -224,8 +270,7 @@ const VIEWS = {
       $("div", {class: "mute"}, "To stop this computer logging in, also revoke its key in the BBS under My Account & Keys.")));
     if (S.node && S.node.disclaimer) out.push(panel($("div", {class: "mute"}, S.node.disclaimer)));
     return out;
-  },
-};
+}
 function compose(x) {
   const to = $("input", {value: x.to || "", placeholder: "username, or user@NODE-ID"}), subject = $("input", {value: x.subject || "", maxlength: "80"}), body = $("textarea", {}), msg = $("div", {});
   document.getElementById("main").replaceChildren(panel($("h3", {}, "New private message"), $("label", {}, "To"), to, $("label", {}, "Subject"), subject, $("label", {}, "Message"), body,
