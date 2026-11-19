@@ -1,0 +1,2 @@
+# BeaconNet Desktop needs only asyncssh (which brings in cryptography).
+asyncssh>=2.14,<3

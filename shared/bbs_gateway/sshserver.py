@@ -24,10 +24,12 @@ from typing import Awaitable, Callable
 
 import asyncssh
 
+from . import clientapi
 from .client import ApiError, CoreAPI, Session
 from .term import Disconnect, Term
 
 log = logging.getLogger("bbs-gateway")
+CLIENT_SUBSYSTEM = "beaconnet-client"  # desktop app API (see clientapi.py)
 
 
 def log_event(name: str, level: int = logging.INFO, **fields: object) -> None:
@@ -83,6 +85,7 @@ class Gateway:
     api: CoreAPI
     app: Callable[["Gateway", Term, Session, "BBSServer"], Awaitable[None]]
     register_app: Callable[["Gateway", Term, Session, "BBSServer"], Awaitable[None]] | None = None
+    client_api: bool = False      # offer the beaconnet-client subsystem (public gateway only)
     per_ip: Counter = field(default_factory=Counter)
     total: int = 0
 
@@ -238,7 +241,9 @@ class BBSServer(asyncssh.SSHServer):
 
 async def _session(gw: Gateway, process: asyncssh.SSHServerProcess) -> None:
     server: BBSServer = process.channel.get_connection().get_owner()
-    if process.command is not None or process.subsystem is not None:
+    client_api = (process.subsystem == CLIENT_SUBSYSTEM and gw.client_api and process.command is None
+                  and server.mode == "key")
+    if not client_api and (process.command is not None or process.subsystem is not None):
         process.stdout.write("This system provides the BBS menu only; commands and subsystems are not available.\n")
         process.exit(1)
         log_event("exec_refused", logging.WARNING, client_ip=server.ip, user=server.username)
@@ -257,6 +262,10 @@ async def _session(gw: Gateway, process: asyncssh.SSHServerProcess) -> None:
         else:
             raise ApiError("unauthenticated", "not logged in", 401)
         session = Session(gw.api, data["token"], data["kind"], int(data.get("idle_timeout_s", 600)))
+        if client_api:
+            log_event("client_api_start", client_ip=server.ip, user=server.username)
+            await clientapi.serve(process, session)
+            return
         term = Term(process, idle_timeout=session.idle_timeout_s)
         log_event("session_start", kind=session.kind, client_ip=server.ip, user=server.username if session.kind != "guest" else "guest")
         if server.mode == "register" and gw.register_app is not None:

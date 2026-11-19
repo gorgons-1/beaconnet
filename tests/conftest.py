@@ -219,7 +219,8 @@ async def gateways(live_core: LiveCore, tmp_path: Path):
                             port=free_port(), no_auth_users=NO_AUTH_USERS, public_host="testhost", public_port=2222)
     adm_cfg = GatewayConfig(service="admin", core_url=live_core.url, token=ADMIN_TOKEN, host_keys=[str(hk)],
                             port=free_port(), no_auth_users={})
-    ssh_gw = Gateway(cfg=ssh_cfg, api=CoreAPI(ssh_cfg.core_url, SSH_TOKEN), app=ssh_menu, register_app=register_only)
+    ssh_gw = Gateway(cfg=ssh_cfg, api=CoreAPI(ssh_cfg.core_url, SSH_TOKEN), app=ssh_menu, register_app=register_only,
+                     client_api=True)
     adm_gw = Gateway(cfg=adm_cfg, api=CoreAPI(adm_cfg.core_url, ADMIN_TOKEN), app=admin_menu)
     s1 = await start(ssh_gw, "127.0.0.1")
     s2 = await start(adm_gw, "127.0.0.1")

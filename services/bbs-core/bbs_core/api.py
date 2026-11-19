@@ -259,6 +259,10 @@ def create_app(bbs: BBS) -> FastAPI:
                  limit: Annotated[int, Query(ge=1, le=50)] = 15) -> dict:
         return bbs.list_messages(who, board, before, limit)
 
+    @app.get("/v1/feed")
+    def feed(who: Who, after: Annotated[int | None, Query(ge=0)] = None, limit: Annotated[int, Query(ge=1, le=100)] = 50) -> dict:
+        return bbs.feed(who, after, limit)
+
     @app.get("/v1/messages/search")
     def search(who: Who, number: int | None = None, board: str | None = Query(None, max_length=32),
                sender: str | None = Query(None, max_length=40), subject: str | None = Query(None, max_length=80),

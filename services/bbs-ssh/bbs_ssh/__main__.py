@@ -16,7 +16,8 @@ def build() -> Gateway:
         f"Visitors: ssh -p {cfg.public_port} guest@{cfg.public_host}   "
         f"New account: ssh -p {cfg.public_port} new@{cfg.public_host}\n"
     )
-    return Gateway(cfg=cfg, api=CoreAPI(cfg.core_url, cfg.token), app=menu, register_app=register_only)
+    return Gateway(cfg=cfg, api=CoreAPI(cfg.core_url, cfg.token), app=menu, register_app=register_only,
+                   client_api=True)
 
 
 if __name__ == "__main__":

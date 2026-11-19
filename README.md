@@ -33,6 +33,13 @@ Sysops log in the same way. An administrator connecting from the local network
 (10.x, 172.16-31.x, 192.168.x) gets an extra **S. Sysop Menu** to approve users, moderate
 and check the node. From the internet the same account sees only the normal menu.
 
+### On your computer: BeaconNet Desktop
+
+Don't want to open SSH to check for news? **[BeaconNet Desktop](clients/desktop/README.md)**
+runs on Windows, macOS and Linux. It pops up a notification for new bulletins,
+EMERGENCY traffic, mail and (for sysops) registrations, and gives you a browser page to
+read, post, send mail and approve users.
+
 ## Install a node
 
 You need:
@@ -124,6 +131,7 @@ services/bbs-core    API + all rules + the only SQLite access (FastAPI)
 services/bbs-ssh     public SSH terminal (asyncssh)
 services/bbs-admin   private admin console (asyncssh)
 services/bbs-sync    node-to-node mesh links (asyncssh)
+clients/desktop      BeaconNet Desktop: notifications + browser page for your PC
 services/bbs-radio   Phase 3 design notes (AX.25 packet radio)
 shared/              gateway library, API contract (openapi.json), envelope format
 scripts/             install, update, peers, backup, restore, healthcheck, rotate, tests

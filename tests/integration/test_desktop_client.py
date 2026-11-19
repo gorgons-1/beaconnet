@@ -1,0 +1,210 @@
+"""The beaconnet-client SSH subsystem and the BeaconNet Desktop app, over real SSH."""
+
+import asyncio
+import importlib.util
+import json
+from pathlib import Path
+
+import asyncssh
+import pytest
+
+from conftest import ROOT, gen_key, pub
+
+pytestmark = pytest.mark.asyncio
+
+
+def load_desktop():
+    spec = importlib.util.spec_from_file_location("beaconnet_desktop", ROOT / "clients/desktop/beaconnet_desktop.py")
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+async def client(port: int, username: str, key=None, password=None):
+    conn = await asyncssh.connect("127.0.0.1", port, username=username, client_keys=[key] if key else [],
+                                  password=password, known_hosts=None, agent_path=None, kbdint_auth=False)
+    proc = await conn.create_process(subsystem="beaconnet-client", encoding="utf-8")
+    n = 0
+
+    async def call(op, **kw):
+        nonlocal n
+        n += 1
+        proc.stdin.write(json.dumps({"id": n, "op": op, **kw}) + "\n")
+        r = json.loads(await asyncio.wait_for(proc.stdout.readline(), 10))
+        assert r["id"] == n
+        return r
+    return conn, call
+
+
+def lan(bbs, nets=("127.0.0.0/8",)):
+    from bbs_core.config import SysopCfg
+    bbs.cfg = bbs.cfg.model_copy(update={"sysop": SysopCfg(allowed_networks=list(nets))})
+
+
+async def test_client_api_basics_and_feed(gateways, bbs, admin_key):
+    ssh_port, _, _ = gateways
+    conn, call = await client(ssh_port, "sysop1", admin_key)
+    hello = (await call("hello"))["data"]
+    assert hello["protocol"] == 1 and hello["me"]["username"] == "sysop1" and hello["info"]["node_id"]
+    first = (await call("feed"))["data"]
+    assert first["bulletins"] == [] and first["sysop"] is False and "pending" not in first  # not LAN
+    r = await call("post", board="EMERGENCY", subject="Bridge closed", body="A82 bridge shut", priority="EMERGENCY",
+                   area="Glen", expires_hours=24)
+    assert r["ok"], r
+    feed = (await call("feed", after=first["latest"]))["data"]
+    assert [b["subject"] for b in feed["bulletins"]] == ["Bridge closed"]
+    assert feed["bulletins"][0]["emergency_board"] is True
+    msg = (await call("message", number=feed["latest"]))["data"]
+    assert msg["body"] == "A82 bridge shut"
+    # Unknown ops, bad types and admin ops from the internet are refused.
+    assert (await call("shell"))["error"]["code"] == "bad_request"
+    assert (await call("message", number="1; DROP"))["error"]["code"] == "bad_request"
+    assert (await call("admin_users"))["error"]["code"] == "forbidden"
+    conn.close()
+
+
+async def test_client_api_sysop_only_from_lan(gateways, bbs, admin_key, ssh_api):
+    ssh_port, _, _ = gateways
+    lan(bbs)
+    from conftest import register
+    register(ssh_api, "newbie", gen_key())
+    conn, call = await client(ssh_port, "sysop1", admin_key)
+    feed = (await call("feed"))["data"]
+    assert feed["sysop"] is True and [p["username"] for p in feed["pending"]] == ["newbie"]
+    users = (await call("admin_users", status="PENDING"))["data"]["users"]
+    r = await call("admin_status", user_id=users[0]["id"], action="approve")
+    assert r["ok"] and r["data"]["status"] == "ACTIVE"
+    assert (await call("feed"))["data"]["pending"] == []
+    conn.close()
+
+
+async def test_ordinary_user_gets_no_admin_even_on_lan(gateways, bbs, active_user):
+    ssh_port, _, _ = gateways
+    lan(bbs)
+    name, key, _ = active_user
+    conn, call = await client(ssh_port, name, key)
+    feed = (await call("feed"))["data"]
+    assert feed["sysop"] is False and "pending" not in feed
+    assert (await call("admin_users"))["error"]["code"] == "forbidden"
+    assert (await call("admin_status", user_id=1, action="approve"))["error"]["code"] == "forbidden"
+    conn.close()
+
+
+async def test_guest_and_register_logins_cannot_use_client_api(gateways):
+    ssh_port, _, _ = gateways
+    for user in ("guest", "new"):
+        conn = await asyncssh.connect("127.0.0.1", ssh_port, username=user, client_keys=[], password="x",
+                                      known_hosts=None, agent_path=None)
+        proc = await conn.create_process(subsystem="beaconnet-client", encoding="utf-8")
+        out = await asyncio.wait_for(proc.stdout.read(), 10)
+        assert "menu only" in out
+        conn.close()
+
+
+async def test_admin_console_has_no_client_api(gateways, admin_key):
+    _, admin_port, _ = gateways
+    conn = await asyncssh.connect("127.0.0.1", admin_port, username="sysop1", client_keys=[admin_key],
+                                  known_hosts=None, agent_path=None)
+    proc = await conn.create_process(subsystem="beaconnet-client", encoding="utf-8")
+    assert "menu only" in await asyncio.wait_for(proc.stdout.read(), 10)
+    conn.close()
+
+
+async def test_desktop_app_end_to_end(gateways, bbs, admin_key, ssh_api, tmp_path, monkeypatch):
+    """Password login, 'remember this computer', notifications, pinned host key."""
+    ssh_port, _, _ = gateways
+    desk = load_desktop()
+    lan(bbs)
+    # A user who registered with a password (no key) and was approved.
+    from bbs_core.security import hash_password
+    bbs.bootstrap_admin("deskop", None, None, pub(gen_key()))
+    with bbs.db.session() as conn:
+        conn.execute("UPDATE users SET password_hash = ? WHERE username = 'deskop'", (hash_password("beacon fire 99"),))
+
+    popped = []
+    settings = desk.Settings(tmp_path / "home")
+    (tmp_path / "home").mkdir(exist_ok=True)
+    settings = desk.Settings(tmp_path / "home")
+    app = desk.App(settings, notify=lambda t, b: popped.append((t, b)))
+
+    with pytest.raises(desk.BBSError) as bad:
+        await app.login("127.0.0.1", ssh_port, "deskop", "wrong password", True)
+    assert bad.value.code == "login_failed"
+
+    await app.login("127.0.0.1", ssh_port, "deskop", "beacon fire 99", True)
+    assert app.status == "connected" and settings.has_key() and app.password is None
+    assert settings["host_key"].startswith("ssh-ed25519 ")
+    await app.check()                      # first check: remembers where we are, no pop-ups
+    assert popped == []
+
+    # News arrives: a bulletin, an emergency, mail and a registration.
+    alice_key = gen_key()
+    from conftest import approve, register
+    register(ssh_api, "alice", alice_key)
+    admin_api_session = ssh_api.login("sysop1", admin_key, ip="127.0.0.1").json()["token"]
+    users = ssh_api.call("GET", "/v1/admin/users", admin_api_session, params={"status": "PENDING"}).json()["users"]
+    ssh_api.call("POST", f"/v1/admin/users/{users[0]['id']}/status", admin_api_session, json={"action": "approve"})
+    s_alice = ssh_api.login("alice", alice_key, ip="203.0.113.5").json()["token"]
+    ssh_api.call("POST", "/v1/messages", s_alice, json={"board": "GENERAL", "subject": "Net tonight", "body": "19:00"})
+    ssh_api.call("POST", "/v1/messages", s_alice, json={"board": "EMERGENCY", "subject": "Power cut", "body": "x",
+                                                       "priority": "EMERGENCY", "area": "Village"})
+    ssh_api.call("POST", "/v1/mail", s_alice, json={"to": "deskop", "subject": "Hello", "body": "hi"})
+    register(ssh_api, "waiting1", gen_key(), ip="203.0.113.7")
+    await app.check()
+    titles = [t for t, _ in popped]
+    assert "New on GENERAL: Net tonight" in titles
+    assert "EMERGENCY: Power cut" in titles
+    assert "Mail from alice" in titles and "New registration waiting" in titles
+    n = len(popped)
+    await app.check()
+    assert len(popped) == n                # nothing twice
+
+    # Next start: logs in with the remembered key, no password.
+    app.link.close()
+    app2 = desk.App(desk.Settings(tmp_path / "home"), notify=lambda t, b: None)
+    await app2.connect()
+    assert app2.status == "connected" and app2.me["username"] == "deskop"
+    app2.link.close()
+
+    # A different host key (node rebuilt, or someone in the middle) is refused.
+    settings2 = desk.Settings(tmp_path / "home")
+    settings2.update(host_key="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl")
+    app3 = desk.App(settings2, notify=lambda t, b: None)
+    with pytest.raises(desk.BBSError) as changed:
+        await app3.connect()
+    assert changed.value.code == "host_key_changed"
+
+
+async def test_desktop_web_page_guards(gateways, tmp_path):
+    desk = load_desktop()
+    app = desk.App(desk.Settings(tmp_path), notify=lambda t, b: None)
+    web = desk.Web(app, 8765)
+
+    async def req(raw: bytes) -> bytes:
+        reader = asyncio.StreamReader()
+        reader.feed_data(raw)
+        reader.feed_eof()
+        out = bytearray()
+
+        class W:
+            def write(self, b): out.extend(b)
+            async def drain(self): pass
+            def close(self): pass
+        await web.handle(reader, W())
+        return bytes(out)
+
+    page = await req(b"GET / HTTP/1.1\r\nHost: 127.0.0.1:8765\r\n\r\n")
+    assert b"200 OK" in page and web.token.encode() in page and b"__TOKEN__" not in page
+    body = b'{"since":0}'
+    no_token = await req(b"POST /api/state HTTP/1.1\r\nHost: 127.0.0.1:8765\r\nContent-Length: 11\r\n\r\n" + body)
+    assert b"403" in no_token.split(b"\r\n")[0]
+    rebinding = await req(b"POST /api/state HTTP/1.1\r\nHost: evil.example:8765\r\nX-BeaconNet-Token: " +
+                          web.token.encode() + b"\r\nContent-Length: 11\r\n\r\n" + body)
+    assert b"403" in rebinding.split(b"\r\n")[0]
+    ok = await req(b"POST /api/state HTTP/1.1\r\nHost: localhost:8765\r\nX-BeaconNet-Token: " +
+                   web.token.encode() + b"\r\nContent-Length: 11\r\n\r\n" + body)
+    assert b"200 OK" in ok and b'"status"' in ok
+    bad_op = json.dumps({"op": "add_key", "public_key": "x"}).encode()
+    r = await req(b"POST /api/call HTTP/1.1\r\nHost: localhost:8765\r\nX-BeaconNet-Token: " + web.token.encode() +
+                  f"\r\nContent-Length: {len(bad_op)}\r\n\r\n".encode() + bad_op)
+    assert b"unknown operation" in r

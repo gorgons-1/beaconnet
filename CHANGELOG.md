@@ -2,6 +2,17 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.4.0 - BeaconNet Desktop
+
+* **BeaconNet Desktop** (`clients/desktop`): a small app for Windows, macOS and Linux.
+  It pops up desktop notifications for new bulletins, EMERGENCY traffic, private mail
+  and (for sysops) new registrations, and serves a page at `http://127.0.0.1:8765` to
+  read, post, send mail and approve registrations. It logs in once with your password,
+  then with its own key ("remember this computer").
+* The node offers a `beaconnet-client` SSH subsystem on port 2222 for it: JSON lines,
+  a fixed list of operations, and the logged-in person's own rights. There's a new
+  `/v1/feed` route in bbs-core.
+
 ## 1.3.0 - easy logins and a Sysop menu
 
 * **No more copying keys.** When someone registers with `ssh new@<node>`, the BBS sees

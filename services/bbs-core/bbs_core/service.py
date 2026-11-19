@@ -609,6 +609,38 @@ class BBS:
             out["more"] = False
         return out
 
+    def feed(self, who: Principal, after: int | None, limit: int = 50) -> dict:
+        """What a desktop client needs for notifications, in one call: bulletins newer than
+        `after` (message number), unread mail, and - for administrators only - pending
+        registrations. Without `after` it returns just the latest number, so a new client
+        doesn't get a flood of old posts."""
+        limit = max(1, min(limit, 100))
+        with self.db.session() as conn:
+            latest = conn.execute("SELECT COALESCE(MAX(id), 0) FROM messages").fetchone()[0]
+            rows = []
+            if after is not None:
+                where = [self._readable_boards_sql(who), "m.status = 'VISIBLE'", "m.id > ?"]
+                rows = conn.execute(
+                    "SELECT m.*, b.name AS board, b.is_emergency FROM messages m JOIN boards b ON b.id = m.board_id"
+                    f" WHERE {' AND '.join(where)} ORDER BY m.id ASC LIMIT ?", (after, limit)).fetchall()
+            bulletins = []
+            for r in rows:
+                d = self._msg_summary(r)
+                d["emergency_board"] = bool(r["is_emergency"])
+                bulletins.append(d)
+            mail: list[dict] = []
+            if who.is_active:
+                mail = [self._pm_dict(r, who) for r in conn.execute(
+                    "SELECT * FROM private_messages WHERE recipient_id = ? AND recipient_state = 'ACTIVE'"
+                    " AND read_at IS NULL ORDER BY id DESC LIMIT 50", (who.user_id,))]
+            out: dict[str, Any] = {"latest": latest, "bulletins": bulletins, "unread_mail": mail,
+                                   "sysop": who.is_admin}
+            if who.is_admin:
+                out["pending"] = [{"id": r["id"], "username": r["username"], "callsign": r["callsign"],
+                                   "created_at": r["created_at"]} for r in conn.execute(
+                    "SELECT id, username, callsign, created_at FROM users WHERE status = 'PENDING' ORDER BY id LIMIT 50")]
+        return out
+
     def get_message(self, who: Principal, number: int) -> dict:
         with self.db.session() as conn:
             r = conn.execute(

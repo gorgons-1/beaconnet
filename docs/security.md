@@ -33,6 +33,10 @@ container user. Compose mounts each one only into the services that need it, at
 * SSH keys, or a password for devices that have no key. Passwords are scrypt hashes;
   wrong passwords are rate-limited per IP and lock the account after 10 in a row. Each
   gateway limits connections per IP and in total. The admin console is key-only.
+* BeaconNet Desktop uses the `beaconnet-client` SSH subsystem on port 2222. It runs only
+  after a normal user login (not guest or registration), maps a fixed list of operations
+  onto the person's own session, and so has exactly that person's rights. It isn't
+  offered on the admin console.
 * At registration the key is taken from the SSH login itself, after the client proved
   it holds the private key. A key that was offered but not signed for is discarded.
 * Admin from the public BBS (the Sysop menu) needs an ACTIVE admin account **and** a

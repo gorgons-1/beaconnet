@@ -1,0 +1,198 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BeaconNet Desktop</title>
+<style>
+:root{--bg:#f6f7f9;--panel:#fff;--ink:#1b1f24;--mute:#5d6673;--line:#dde1e6;--accent:#b4461f;--accent-ink:#fff;--emer:#c0262d;--emer-bg:#fdecec;--ok:#2f7d4f;--warn:#9a6a00}
+@media (prefers-color-scheme:dark){:root{--bg:#121417;--panel:#1b1e23;--ink:#e7e9ec;--mute:#9aa3ae;--line:#2c3138;--accent:#e2733f;--accent-ink:#111;--emer:#ff6b6b;--emer-bg:#3a1b1d;--ok:#6fcf97;--warn:#e0b341}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
+header h1{font-size:17px;margin:0;letter-spacing:.5px}header .node{color:var(--mute);font-size:13px}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--mute);display:inline-block;margin-right:6px}.dot.on{background:var(--ok)}.dot.off{background:var(--emer)}
+nav{display:flex;gap:4px;padding:8px 16px;flex-wrap:wrap}nav button{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit}
+nav button.sel{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}nav .badge{background:var(--emer);color:#fff;border-radius:9px;padding:0 6px;font-size:12px;margin-left:4px}
+main{max-width:980px;margin:0 auto;padding:8px 16px 40px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin:10px 0}
+.row{display:flex;gap:10px;align-items:baseline;padding:8px 6px;border-bottom:1px solid var(--line);cursor:pointer}.row:last-child{border-bottom:0}.row:hover{background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.row .n{color:var(--mute);font-variant-numeric:tabular-nums;min-width:48px}.row .s{flex:1;min-width:0;overflow-wrap:anywhere}.row .m{color:var(--mute);font-size:13px;white-space:nowrap}
+.tag{font-size:11px;font-weight:700;padding:1px 6px;border-radius:4px;background:var(--emer-bg);color:var(--emer);margin-right:6px}
+.unread .s{font-weight:650}pre{white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.5 ui-monospace,Consolas,monospace;margin:10px 0 0}
+label{display:block;margin:8px 0 3px;color:var(--mute);font-size:13px}input,select,textarea{width:100%;font:inherit;padding:7px 9px;border:1px solid var(--line);border-radius:6px;background:var(--bg);color:var(--ink)}
+textarea{min-height:180px}button.go{background:var(--accent);color:var(--accent-ink);border:0;border-radius:6px;padding:8px 16px;font:inherit;cursor:pointer;margin-top:10px}
+button.plain{background:none;border:1px solid var(--line);color:var(--ink);border-radius:6px;padding:6px 12px;font:inherit;cursor:pointer;margin:10px 6px 0 0}
+.err{color:var(--emer);margin:8px 0}.mute{color:var(--mute)}.grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}@media(max-width:640px){.grid{grid-template-columns:1fr}}
+.chk{display:flex;gap:8px;align-items:center;margin:6px 0;color:var(--ink);font-size:15px}.chk input{width:auto}
+.ev{padding:6px 4px;border-bottom:1px solid var(--line)}.ev b{font-weight:600}.ev.emergency b{color:var(--emer)}
+</style>
+</head>
+<body>
+<header><h1>BEACONNET</h1><span class="node" id="node"></span><span style="flex:1"></span><span id="conn" class="mute"><span class="dot"></span>…</span></header>
+<nav id="tabs"></nav>
+<main id="main"></main>
+<script>
+"use strict";
+const TOKEN = "__TOKEN__";
+let S = {status: "loading", events: []}, tab = "news", since = 0, news = [], lastOpen = null;
+const $ = (t, a = {}, ...kids) => { const e = document.createElement(t); for (const [k, v] of Object.entries(a)) { if (k === "on") for (const [ev, f] of Object.entries(v)) e.addEventListener(ev, f); else if (k === "class") e.className = v; else e.setAttribute(k, v); } for (const c of kids) e.append(c instanceof Node ? c : document.createTextNode(c ?? "")); return e; };
+async function api(path, data = {}) {
+  const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json", "X-BeaconNet-Token": TOKEN}, body: JSON.stringify(data)});
+  const j = await r.json(); if (j && j.error) throw new Error(j.error); return j;
+}
+const call = (op, args = {}) => api("/api/call", {op, ...args});
+function when(iso) { if (!iso) return ""; const d = new Date(iso); return d.toLocaleString([], {day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit"}); }
+function panel(...kids) { return $("div", {class: "panel"}, ...kids); }
+function errBox(e) { return $("div", {class: "err"}, String(e.message || e)); }
+
+async function poll() {
+  try {
+    const st = await api("/api/state", {since});
+    for (const e of st.events) {
+      news.unshift(e); since = Math.max(since, e.seq);
+      if (window.Notification && Notification.permission === "granted" && document.hidden && e.kind !== "info") new Notification(e.title, {body: e.body, tag: "bn" + e.seq});
+    }
+    news = news.slice(0, 100);
+    const was = S.status + "/" + S.sysop; S = st;
+    head();
+    if (was !== S.status + "/" + S.sysop || (tab === "news" && st.events.length)) render();
+  } catch (e) { S.status = "app stopped"; head(); }
+}
+function head() {
+  const on = S.status === "connected";
+  document.getElementById("node").textContent = S.node && S.node.node_id ? `${S.node.node_name || ""} · ${S.node.node_id}` : "";
+  const c = document.getElementById("conn"); c.replaceChildren($("span", {class: "dot " + (on ? "on" : "off")}), on ? `${S.username}${S.sysop ? " (sysop)" : ""}` : S.status);
+  const tabs = [["news", "What's new"], ["boards", "Bulletins"], ["mail", "Mail"], ["post", "Post"]];
+  if (S.sysop) tabs.push(["sysop", "Sysop"]);
+  tabs.push(["settings", "Settings"]);
+  if (!on && S.status !== "offline") tab = "settings";
+  if (tab === "sysop" && !S.sysop) tab = "news";
+  const unread = (S.me && S.me.unread_mail) || 0;
+  document.getElementById("tabs").replaceChildren(...tabs.map(([k, label]) => {
+    const b = $("button", {class: k === tab ? "sel" : "", on: {click: () => { tab = k; head(); render(); }}}, label);
+    if (k === "mail" && unread) b.append($("span", {class: "badge"}, String(unread)));
+    return b;
+  }));
+}
+async function render(x) {
+  const m = document.getElementById("main");
+  try { m.replaceChildren(...await VIEWS[tab](x)); } catch (e) { m.replaceChildren(panel(errBox(e))); }
+}
+function bulletinRow(b) {
+  return $("div", {class: "row" + (b.read === false ? " unread" : ""), on: {click: () => openMsg(b.number)}},
+    $("span", {class: "n"}, "#" + b.number),
+    $("span", {class: "s"}, ...(b.priority && b.priority !== "ROUTINE" ? [$("span", {class: "tag"}, b.priority)] : []), b.subject),
+    $("span", {class: "m"}, `${b.board} · ${b.callsign || b.author} · ${when(b.created_at)}`));
+}
+async function openMsg(n) {
+  const m = await call("message", {number: n});
+  const body = [$("h3", {}, ...(m.priority && m.priority !== "ROUTINE" ? [$("span", {class: "tag"}, m.priority)] : []), m.subject),
+    $("div", {class: "mute"}, `#${m.number} on ${m.board} · from ${m.callsign || m.author}${m.origin_node ? " @" + m.origin_node : ""} · ${when(m.created_at)}${m.area ? " · area: " + m.area : ""}`),
+    $("pre", {}, m.body), $("button", {class: "plain", on: {click: () => render()}}, "Back")];
+  if (S.me && S.me.can_post) body.push($("button", {class: "plain", on: {click: () => { tab = "post"; head(); render({board: m.board, reply_to: m.number, subject: "Re: " + m.subject}); }}}, "Reply"));
+  document.getElementById("main").replaceChildren(panel(...body));
+}
+const VIEWS = {
+  async news() {
+    const out = [];
+    if (S.status !== "connected") out.push(panel($("b", {}, "Not connected. "), S.error || "", " Retrying automatically."));
+    if (window.Notification && Notification.permission === "default")
+      out.push(panel("Allow pop-up notifications in this browser too? ", $("button", {class: "plain", on: {click: async () => { await Notification.requestPermission(); render(); }}}, "Allow")));
+    if (S.status === "connected") {
+      const r = await call("messages", {limit: 15});
+      out.push(panel($("h3", {}, "Latest bulletins"), ...r.messages.map(bulletinRow)));
+    }
+    out.push(panel($("h3", {}, "Notifications"), ...(news.length ? news.map(e => $("div", {class: "ev " + e.kind}, $("span", {class: "mute"}, e.at + "  "), $("b", {}, e.title), " — ", e.body)) : [$("div", {class: "mute"}, "Nothing new yet. This page and your desktop will tell you when something arrives.")])));
+    return out;
+  },
+  async boards(x) {
+    const bs = (await call("boards")).boards;
+    const board = (x && x.board) || null;
+    const sel = $("select", {on: {change: e => render({board: e.target.value || null})}}, $("option", {value: ""}, "All boards"), ...bs.map(b => { const o = $("option", {value: b.name}, `${b.name} — ${b.description || ""}`); if (b.name === board) o.selected = true; return o; }));
+    const r = await call("messages", board ? {board, limit: 50} : {limit: 50});
+    return [panel(sel), panel(...(r.messages.length ? r.messages.map(bulletinRow) : [$("div", {class: "mute"}, "No bulletins here yet.")]))];
+  },
+  async mail(x) {
+    if (!S.me.can_mail) return [panel("Private mail opens once a sysop approves your account.")];
+    const folder = (x && x.folder) || "inbox";
+    const r = await call("mail", {folder, limit: 50});
+    const tabs = ["inbox", "sent", "archive"].map(f => $("button", {class: "plain", on: {click: () => render({folder: f})}}, f === folder ? "▸ " + f : f));
+    const rows = r.messages.map(m => $("div", {class: "row" + (m.read || folder !== "inbox" ? "" : " unread"), on: {click: async () => {
+      const full = await call("mail_get", {mail_id: m.id});
+      document.getElementById("main").replaceChildren(panel($("h3", {}, full.subject), $("div", {class: "mute"}, `from ${full.from} to ${full.to} · ${when(full.created_at)}${full.delivery_state ? " · " + full.delivery_state : ""}`),
+        $("pre", {}, full.body), $("button", {class: "plain", on: {click: () => render({folder})}}, "Back"),
+        $("button", {class: "plain", on: {click: () => compose({to: full.folder === "inbox" ? full.from : full.to, subject: "Re: " + full.subject, reply_to: full.id})}}, "Reply")));
+      poll();
+    }}}, $("span", {class: "n"}, ""), $("span", {class: "s"}, m.subject), $("span", {class: "m"}, `${folder === "sent" ? "to " + m.to : m.from} · ${when(m.created_at)}`)));
+    return [panel(...tabs, $("button", {class: "go", style: "float:right;margin-top:0", on: {click: () => compose({})}}, "New message")), panel(...(rows.length ? rows : [$("div", {class: "mute"}, "Empty.")]))];
+  },
+  async post(x) {
+    if (!S.me.can_post) return [panel("Posting opens once a sysop approves your account.")];
+    x = x || {};
+    const bs = (await call("boards")).boards.filter(b => b.can_post);
+    const board = $("select", {}, ...bs.map(b => { const o = $("option", {value: b.name}, b.name); if (b.name === x.board) o.selected = true; return o; }));
+    const subject = $("input", {maxlength: "80", value: x.subject || ""}), body = $("textarea", {});
+    const prio = $("select", {}, ...["ROUTINE", "PRIORITY", "EMERGENCY"].map(p => $("option", {value: p}, p))), area = $("input", {maxlength: "40", placeholder: "town, county or region"});
+    const emer = $("div", {}, $("div", {class: "err"}, "EMERGENCY board: real emergency and priority traffic only. This is NOT an official emergency service."), $("div", {class: "grid"}, $("div", {}, $("label", {}, "Priority"), prio), $("div", {}, $("label", {}, "Area"), area)));
+    const isEmer = () => (bs.find(b => b.name === board.value) || {}).emergency;
+    const sync = () => emer.style.display = isEmer() ? "" : "none"; board.addEventListener("change", sync); sync();
+    const msg = $("div", {});
+    const send = $("button", {class: "go", on: {click: async () => {
+      msg.replaceChildren(); const args = {board: board.value, subject: subject.value.trim(), body: body.value};
+      if (x.reply_to) args.reply_to = x.reply_to; if (isEmer()) { args.priority = prio.value; if (area.value.trim()) args.area = area.value.trim(); }
+      try { const r = await call("post", args); msg.replaceChildren($("div", {}, `Posted as #${r.number}.`)); subject.value = ""; body.value = ""; } catch (e) { msg.replaceChildren(errBox(e)); }
+    }}}, "Post bulletin");
+    return [panel($("h3", {}, x.reply_to ? `Reply to #${x.reply_to}` : "Post a bulletin"), $("label", {}, "Board"), board, emer, $("label", {}, "Subject"), subject, $("label", {}, "Message"), body, send, msg)];
+  },
+  async sysop() {
+    const r = await call("admin_users", {status: "PENDING"});
+    const rows = r.users.map(u => {
+      const msg = $("span", {class: "mute"});
+      const act = (action) => async () => {
+        if (action === "reject" && !confirm(`Reject ${u.username}?`)) return;
+        let verified;
+        if (action === "approve" && u.callsign) verified = confirm(`Have you verified that ${u.callsign} belongs to this person?\nOK = verified, Cancel = approve with the callsign unverified.`);
+        try { await call("admin_status", {user_id: u.id, action, ...(verified === undefined ? {} : {callsign_verified: verified})}); render(); } catch (e) { msg.textContent = e.message; }
+      };
+      return $("div", {class: "row", style: "cursor:default"}, $("span", {class: "n"}, "#" + u.id),
+        $("span", {class: "s"}, u.username, u.callsign ? `  (${u.callsign}, unverified)` : "", u.display_name ? ` — ${u.display_name}` : "", " ", msg),
+        $("span", {class: "m"}, when(u.created_at) + " "), $("button", {class: "go", style: "margin:0 4px", on: {click: act("approve")}}, "Approve"), $("button", {class: "plain", style: "margin:0", on: {click: act("reject")}}, "Reject"));
+    });
+    return [panel($("h3", {}, "Pending registrations"), ...(rows.length ? rows : [$("div", {class: "mute"}, "Nobody is waiting for approval.")])),
+      panel($("div", {class: "mute"}, "Suspensions, moderation, peers and backups are in the BBS Sysop menu (log in from your LAN and press S)."))];
+  },
+  async settings() {
+    const host = $("input", {value: S.host || "", placeholder: "e.g. 192.168.1.50 or bbs.example.org"}), port = $("input", {value: S.port || 2222, inputmode: "numeric"});
+    const user = $("input", {value: S.username || "", autocomplete: "username"}), pass = $("input", {type: "password", autocomplete: "current-password"});
+    const remember = $("input", {type: "checkbox", checked: ""}), msg = $("div", {});
+    const login = $("button", {class: "go", on: {click: async () => {
+      msg.replaceChildren($("span", {class: "mute"}, "Connecting…"));
+      try { await api("/api/login", {host: host.value, port: Number(port.value), username: user.value, password: pass.value, remember: remember.checked}); pass.value = ""; msg.replaceChildren("Connected."); await poll(); tab = "news"; head(); render(); }
+      catch (e) { msg.replaceChildren(errBox(e)); }
+    }}}, S.status === "connected" ? "Log in again" : "Connect");
+    const out = [panel($("h3", {}, "Your BBS node"), $("div", {class: "grid"}, $("div", {}, $("label", {}, "Node address"), host), $("div", {}, $("label", {}, "Port"), port)),
+      $("div", {class: "grid"}, $("div", {}, $("label", {}, "BBS username"), user), $("div", {}, $("label", {}, "Password"), pass)),
+      $("label", {class: "chk"}, remember, "Remember this computer (it gets its own key; no password next time)"), login, msg,
+      S.remembered ? $("div", {class: "mute", style: "margin-top:8px"}, "This computer is remembered and logs in by itself.") : "",
+      S.error ? errBox({message: S.error}) : "")];
+    const n = S.notify || {};
+    const box = (k, label) => { const c = $("input", {type: "checkbox"}); c.checked = !!n[k]; c.addEventListener("change", () => api("/api/notify", {[k]: c.checked})); return $("label", {class: "chk"}, c, label); };
+    const boxes = [box("notify_emergency", "EMERGENCY and priority bulletins"), box("notify_bulletins", "All other new bulletins"), box("notify_mail", "New private mail")];
+    if (S.sysop) boxes.push(box("notify_registrations", "New registrations waiting for approval"));
+    out.push(panel($("h3", {}, "Notify me about"), ...boxes));
+    if (S.status === "connected" || S.remembered) out.push(panel($("button", {class: "plain", on: {click: async () => { if (confirm("Forget this node and this computer's key?")) { await api("/api/logout"); poll(); render(); } }}}, "Forget this node"),
+      $("div", {class: "mute"}, "To stop this computer logging in, also revoke its key in the BBS under My Account & Keys.")));
+    if (S.node && S.node.disclaimer) out.push(panel($("div", {class: "mute"}, S.node.disclaimer)));
+    return out;
+  },
+};
+function compose(x) {
+  const to = $("input", {value: x.to || "", placeholder: "username, or user@NODE-ID"}), subject = $("input", {value: x.subject || "", maxlength: "80"}), body = $("textarea", {}), msg = $("div", {});
+  document.getElementById("main").replaceChildren(panel($("h3", {}, "New private message"), $("label", {}, "To"), to, $("label", {}, "Subject"), subject, $("label", {}, "Message"), body,
+    $("div", {class: "mute"}, "Not end-to-end encrypted: sysops relaying it could read it. Don't send passwords."),
+    $("button", {class: "go", on: {click: async () => { try { const a = {to: to.value.trim(), subject: subject.value.trim(), body: body.value}; if (x.reply_to) a.reply_to = x.reply_to; await call("mail_send", a); tab = "mail"; render({folder: "sent"}); } catch (e) { msg.replaceChildren(errBox(e)); } }}}, "Send"),
+    $("button", {class: "plain", on: {click: () => render()}}, "Cancel"), msg));
+}
+poll().then(render); setInterval(poll, 5000);
+</script>
+</body>
+</html>
