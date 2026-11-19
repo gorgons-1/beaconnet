@@ -1,0 +1,93 @@
+# Build BeaconNet Desktop for Windows (.exe), macOS (.app) and Linux, and attach the
+# downloads to the GitHub release when a v* tag is pushed. Run it by hand
+# (Actions > desktop > Run workflow) to get test builds as workflow artifacts.
+name: desktop
+
+on:
+  push:
+    tags: ["v*"]
+    branches: ["desktop-*"]      # test builds, downloadable as workflow artifacts
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            asset: BeaconNet-Windows.zip
+          - os: macos-latest
+            asset: BeaconNet-macOS.zip
+          - os: ubuntu-22.04
+            asset: BeaconNet-Linux-x86_64.tar.gz
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: clients/desktop
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install build tools
+        run: python -m pip install --disable-pip-version-check -r requirements-build.txt
+      - name: Icons
+        run: python make_icons.py .
+      - name: Build
+        run: |
+          SEP=":"; [[ "$RUNNER_OS" == "Windows" ]] && SEP=";"
+          ICON=icon.png
+          [[ "$RUNNER_OS" == "Windows" ]] && ICON=icon.ico
+          [[ "$RUNNER_OS" == "macOS" ]] && ICON=icon.icns
+          MODE=--onefile; [[ "$RUNNER_OS" == "macOS" ]] && MODE=--onedir   # a normal .app bundle on macOS
+          python -m PyInstaller --noconfirm --clean $MODE --windowed --name BeaconNet \
+            --icon "$ICON" --add-data "ui.html${SEP}." \
+            --hidden-import pystray._win32 --hidden-import pystray._darwin \
+            --hidden-import pystray._appindicator --hidden-import pystray._gtk --hidden-import pystray._xorg \
+            --osx-bundle-identifier org.beaconnet.desktop \
+            beaconnet_desktop.py
+      - name: Smoke test (starts, serves its page, stops)
+        if: runner.os != 'macOS'
+        run: |
+          BIN=dist/BeaconNet; [[ "$RUNNER_OS" == "Windows" ]] && BIN=dist/BeaconNet.exe
+          export BEACONNET_HOME="$RUNNER_TEMP/bn"
+          "$BIN" --no-browser --no-tray --port 8799 &
+          PID=$!
+          for i in $(seq 30); do curl -sf -H "Host: 127.0.0.1:8799" http://127.0.0.1:8799/ | grep -q BEACONNET && break; sleep 1; done
+          curl -sf -H "Host: 127.0.0.1:8799" http://127.0.0.1:8799/ | grep -q BEACONNET
+          if [[ "$RUNNER_OS" == "Windows" ]]; then taskkill //F //IM BeaconNet.exe || true; else kill $PID || true; fi
+      - name: Smoke test (macOS app bundle)
+        if: runner.os == 'macOS'
+        run: |
+          export BEACONNET_HOME="$RUNNER_TEMP/bn"
+          dist/BeaconNet.app/Contents/MacOS/BeaconNet --no-browser --no-tray --port 8799 &
+          PID=$!
+          for i in $(seq 30); do curl -sf http://127.0.0.1:8799/ | grep -q BEACONNET && break; sleep 1; done
+          curl -sf http://127.0.0.1:8799/ | grep -q BEACONNET
+          kill $PID || true
+      - name: Package
+        run: |
+          cp README.md dist/README.md
+          cd dist
+          case "$RUNNER_OS" in
+            Windows) 7z a "../${{ matrix.asset }}" BeaconNet.exe README.md >/dev/null ;;
+            macOS)   ditto -c -k --keepParent BeaconNet.app "../${{ matrix.asset }}" ;;
+            Linux)   tar czf "../${{ matrix.asset }}" BeaconNet README.md ;;
+          esac
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: clients/desktop/${{ matrix.asset }}
+      - name: Attach to the release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The release is created by hand right after the tag is pushed; wait for it.
+          for i in $(seq 40); do gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 && break; sleep 15; done
+          gh release upload "$GITHUB_REF_NAME" "${{ matrix.asset }}" --clobber

@@ -43,6 +43,13 @@ POLL_SECONDS = 30
 # --- settings ---------------------------------------------------------------------------
 
 
+def resource(name: str) -> Path:
+    """A file shipped with the app (next to this script, or inside a packaged .exe/.app)."""
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return base / name
+
+
+
 def config_dir() -> Path:
     if os.environ.get("BEACONNET_HOME"):
         d = Path(os.environ["BEACONNET_HOME"])
@@ -371,7 +378,7 @@ class Web:
     def __init__(self, app: App, port: int) -> None:
         self.app, self.port = app, port
         self.token = secrets.token_urlsafe(24)
-        self.page = (Path(__file__).with_name("ui.html")).read_text(encoding="utf-8")
+        self.page = resource("ui.html").read_text(encoding="utf-8")
 
     async def handle(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
         try:
@@ -451,21 +458,79 @@ class Web:
             pass
 
 
-async def amain(args: argparse.Namespace) -> None:
+def open_window(url: str) -> None:
+    """Open the page in its own app-style window (Edge/Chrome/Chromium --app), or else in
+    the default browser."""
+    candidates: list[list[str]] = []
+    if sys.platform == "win32":
+        for root in (os.environ.get("ProgramFiles(x86)"), os.environ.get("ProgramFiles"), os.environ.get("LOCALAPPDATA")):
+            if root:
+                candidates += [[str(Path(root) / "Microsoft/Edge/Application/msedge.exe")],
+                               [str(Path(root) / "Google/Chrome/Application/chrome.exe")]]
+    elif sys.platform == "darwin":
+        for app in ("Google Chrome", "Microsoft Edge", "Chromium", "Brave Browser"):
+            candidates.append([f"/Applications/{app}.app/Contents/MacOS/{app}"])
+    else:
+        for exe in ("chromium", "chromium-browser", "google-chrome", "google-chrome-stable", "microsoft-edge", "brave-browser"):
+            if shutil.which(exe):
+                candidates.append([shutil.which(exe)])  # type: ignore[list-item]
+    for cmd in candidates:
+        if Path(cmd[0]).exists():
+            try:
+                subprocess.Popen(cmd + [f"--app={url}", "--window-size=1000,760"], stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, start_new_session=sys.platform != "win32")
+                return
+            except OSError:
+                continue
+    webbrowser.open(url)
+
+
+def tray_icon_image():  # type: ignore[no-untyped-def]
+    """A beacon: an orange flame on a dark tower, drawn so no image file is needed."""
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGBA", (64, 64), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    d.ellipse((2, 2, 62, 62), fill=(27, 31, 36, 255))
+    d.polygon([(24, 56), (40, 56), (36, 30), (28, 30)], fill=(220, 224, 230, 255))
+    d.polygon([(32, 8), (42, 26), (32, 32), (22, 26)], fill=(226, 115, 63, 255))
+    d.ellipse((28, 16, 36, 26), fill=(255, 205, 90, 255))
+    return img
+
+
+def run_with_tray(url: str, background) -> bool:  # type: ignore[no-untyped-def]
+    """Show a tray / menu-bar icon (Open, Quit) and run `background` in a thread.
+    Returns False if no tray is possible here, so the caller runs without one."""
+    try:
+        import pystray
+    except Exception:
+        return False
+    import threading
+
+    def quit_app(icon, _item=None):  # type: ignore[no-untyped-def]
+        icon.stop()
+        os._exit(0)
+
+    try:
+        icon = pystray.Icon("BeaconNet", tray_icon_image(), "BeaconNet", menu=pystray.Menu(
+            pystray.MenuItem("Open BeaconNet", lambda i, _=None: open_window(url), default=True),
+            pystray.MenuItem("Quit", quit_app)))
+    except Exception:
+        return False
+    worker = threading.Thread(target=background, daemon=True)
+    worker.start()
+    try:
+        icon.run()  # must own the main thread on macOS
+    except Exception:
+        worker.join()  # no tray after all (e.g. no desktop session): keep running without one
+    return True
+
+
+async def serve(args: argparse.Namespace, started) -> None:  # type: ignore[no-untyped-def]
     app = App(Settings(config_dir()))
     web = Web(app, args.port)
-    try:
-        server = await asyncio.start_server(web.handle, "127.0.0.1", args.port)
-    except OSError:
-        # Already running? Just open the page of the running copy.
-        if not args.no_browser:
-            webbrowser.open(f"http://127.0.0.1:{args.port}/")
-        print(f"BeaconNet Desktop is already running on port {args.port}.")
-        return
-    url = f"http://127.0.0.1:{args.port}/"
-    print(f"BeaconNet Desktop {VERSION} - open {url}  (Ctrl+C to stop)")
-    if not args.no_browser:
-        webbrowser.open(url)
+    server = await asyncio.start_server(web.handle, "127.0.0.1", args.port)
+    started()
     async with server:
         await app.run()
 
@@ -473,10 +538,37 @@ async def amain(args: argparse.Namespace) -> None:
 def main() -> None:
     ap = argparse.ArgumentParser(description="BeaconNet Desktop - notifications for your BBS node")
     ap.add_argument("--port", type=int, default=8765, help="local port for the page (default 8765)")
-    ap.add_argument("--no-browser", action="store_true", help="don't open the browser on start")
+    ap.add_argument("--no-browser", action="store_true", help="don't open the window on start")
+    ap.add_argument("--no-tray", action="store_true", help="no tray / menu-bar icon (e.g. on a server)")
     ap.add_argument("--version", action="version", version=VERSION)
+    args = ap.parse_args()
+    url = f"http://127.0.0.1:{args.port}/"
+
+    import socket
+    with socket.socket() as probe:
+        if probe.connect_ex(("127.0.0.1", args.port)) == 0:
+            # Already running: just show it.
+            if not args.no_browser:
+                open_window(url)
+            print(f"BeaconNet Desktop is already running: {url}")
+            return
+
+    def started() -> None:
+        print(f"BeaconNet Desktop {VERSION} - {url}  (Ctrl+C to stop)")
+        if not args.no_browser:
+            open_window(url)
+
+    def background() -> None:
+        try:
+            asyncio.run(serve(args, started))
+        except OSError as exc:
+            desktop_notify("BeaconNet can't start", f"Port {args.port} is in use ({exc.strerror}).")
+            os._exit(1)
+
+    if not args.no_tray and run_with_tray(url, background):
+        return
     try:
-        asyncio.run(amain(ap.parse_args()))
+        background()
     except KeyboardInterrupt:
         pass
 

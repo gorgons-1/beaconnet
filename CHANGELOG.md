@@ -4,7 +4,8 @@ Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
 ## 1.4.0 - BeaconNet Desktop
 
-* **BeaconNet Desktop** (`clients/desktop`): a small app for Windows, macOS and Linux.
+* **BeaconNet Desktop** (`clients/desktop`): a double-click app for Windows (.exe), macOS
+  (.app) and Linux, attached to each GitHub release; it lives in the tray / menu bar.
   It pops up desktop notifications for new bulletins, EMERGENCY traffic, private mail
   and (for sysops) new registrations, and serves a page at `http://127.0.0.1:8765` to
   read, post, send mail and approve registrations. It logs in once with your password,

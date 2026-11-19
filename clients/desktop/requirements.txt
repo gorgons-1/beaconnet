@@ -1,2 +1,4 @@
-# BeaconNet Desktop needs only asyncssh (which brings in cryptography).
+# BeaconNet Desktop needs asyncssh (which brings in cryptography); the tray icon is optional.
 asyncssh>=2.14,<3
+pystray>=0.19     # optional: tray / menu-bar icon
+pillow>=10        # optional: draws the tray icon

@@ -1,0 +1,5 @@
+# Pinned tools used by .github/workflows/desktop.yml to build BeaconNet.exe / .app / Linux.
+asyncssh==2.19.0
+pystray==0.19.5
+pillow==11.0.0
+pyinstaller==6.11.1

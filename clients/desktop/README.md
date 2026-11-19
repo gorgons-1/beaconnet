@@ -14,29 +14,36 @@ approve or reject registrations. You don't need an SSH window.
 
 ## Install
 
-You need **Python 3.9 or newer**:
+Download the file for your computer from the
+[latest release](https://github.com/gorgons-1/scotland-bbs/releases/latest):
 
-| System | Get Python |
-|---|---|
-| Windows | [python.org/downloads](https://www.python.org/downloads/), and tick **Add python.exe to PATH**. No admin rights needed. Or install it from the Microsoft Store. |
-| macOS | [python.org/downloads](https://www.python.org/downloads/) |
-| Linux | it's already there (`python3`) |
+| System | Download | Start |
+|---|---|---|
+| Windows 10/11 | `BeaconNet-Windows.zip` | unzip, double-click **BeaconNet.exe** |
+| macOS 12+ (Apple silicon) | `BeaconNet-macOS.zip` | unzip, drag **BeaconNet** to Applications, open it |
+| Linux (x86-64) | `BeaconNet-Linux-x86_64.tar.gz` | unpack, double-click **BeaconNet** (or run `./BeaconNet`) |
 
-Then download this folder from GitHub. Either:
+There's nothing else to install. A window opens at the login screen, and a small beacon
+icon appears in the system tray (Windows), the menu bar (macOS) or the panel (Linux).
+Closing the window keeps the notifications running; use the icon's **Open** or **Quit**.
 
-* **Code > Download ZIP** on the repository page, then unzip it and open `clients/desktop`, or
-* `git clone https://github.com/gorgons-1/scotland-bbs.git` and open `clients/desktop`
+**The first time only**, your computer warns you, because the app isn't signed with a
+paid certificate:
 
-Start it:
+* **Windows** "Windows protected your PC": click **More info**, then **Run anyway**.
+* **macOS** "can't be opened": right-click (or Control-click) the app, choose **Open**,
+  then **Open** again. On newer macOS: System Settings > Privacy & Security > **Open Anyway**.
 
-| System | Start |
-|---|---|
-| Windows | double-click **`BeaconNet-Windows.cmd`** |
-| macOS | double-click **`BeaconNet-macOS.command`** (the first time: right-click > Open) |
-| Linux | `./beaconnet-linux.sh` |
+The window uses Edge or Chrome's app mode if you have one (every Windows PC has Edge).
+Otherwise the page opens in your normal browser, at `http://127.0.0.1:8765`.
 
-The first start installs the one library it needs (`asyncssh`) for your user only, then
-opens the page in your browser.
+### Running from source instead
+
+If you'd rather not run a downloaded program, or you're on another platform (Raspberry
+Pi, Intel Mac), install Python 3.9+ and run the launcher in this folder:
+`BeaconNet-Windows.cmd`, `BeaconNet-macOS.command` or `beaconnet-linux.sh`. They install
+the libraries the app needs (`asyncssh`, and `pystray`/`pillow` for the tray icon) for
+your user only.
 
 ## First connection
 
@@ -63,10 +70,10 @@ anyone else.
 
 ## Start it with your computer
 
-* **Windows**: press Win+R, type `shell:startup`, and put a shortcut to
-  `BeaconNet-Windows.cmd` in that folder.
-* **macOS**: System Settings > General > Login Items > add `BeaconNet-macOS.command`.
-* **Linux**: add `beaconnet-linux.sh --no-browser` to your desktop's startup applications.
+* **Windows**: press Win+R, type `shell:startup`, and put a shortcut to `BeaconNet.exe`
+  in that folder. Add ` --no-browser` to the shortcut's target to start it quietly.
+* **macOS**: System Settings > General > Login Items > add **BeaconNet**.
+* **Linux**: add `BeaconNet --no-browser` to your desktop's startup applications.
 
 Open the page again at any time at <http://127.0.0.1:8765>. Running the launcher again
 just opens the page.
