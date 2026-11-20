@@ -2,6 +2,14 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.9.3 - mail stays in the conversation
+
+* BeaconNet Desktop 1.4.3:
+  * After you send, you're taken back to that conversation (with your new message at
+    the bottom) instead of a raw list of sent mail.
+  * *sent* and *archive* are grouped into conversations too, so a reply chain is one
+    line with a message count and the subject without its "Re: Re: Re:".
+
 ## 1.9.2 - address book for big nodes
 
 * The address book is searched by the node and sent a page at a time, so it works with

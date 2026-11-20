@@ -78,6 +78,20 @@ function threadsOf(msgs) {
   for (const t of out) { t.msgs.sort((a, b) => a.id - b.id); t.last = t.msgs[t.msgs.length - 1]; t.unread = t.msgs.some(m => m.folder === "inbox" && !m.read); }
   return out.sort((a, b) => b.last.id - a.last.id);
 }
+async function conversations() {
+  const inbox = await call("mail", {folder: "inbox", limit: 50}), sent = await call("mail", {folder: "sent", limit: 50});
+  return threadsOf([...inbox.messages, ...sent.messages]);
+}
+async function afterSend(to, subject) {
+  // Back to the conversation you just wrote in, like a mail program - not a raw "sent" list.
+  tab = "mail";
+  try {
+    const key = to.toLowerCase() + "\n" + baseSubject(subject).toLowerCase();
+    const t = (await conversations()).find(t => String(t.other || "").toLowerCase() + "\n" + t.subject.toLowerCase() === key);
+    if (t) { head(); return openThread(t); }
+  } catch (e) { /* fall back to the list */ }
+  head(); render({folder: "inbox"});
+}
 async function openThread(t, folder = "inbox") {
   const main = document.getElementById("main");
   try {
@@ -168,19 +182,12 @@ const VIEWS = {
     const folder = (x && x.folder) || "inbox";
     const label = {inbox: "conversations", sent: "sent", archive: "archive"};
     const tabs = ["inbox", "sent", "archive"].map(f => $("button", {class: "plain", on: {click: () => render({folder: f})}}, f === folder ? "▸ " + label[f] : label[f]));
-    let rows;
-    if (folder === "inbox") {
-      // Like a mail program: one row per conversation (same person, same subject without the
-      // "Re:"s), including your own replies, newest conversation first.
-      const inbox = await call("mail", {folder: "inbox", limit: 50}), sent = await call("mail", {folder: "sent", limit: 50});
-      rows = threadsOf([...inbox.messages, ...sent.messages]).map(t => $("div", {class: "row" + (t.unread ? " unread" : ""), on: {click: () => openThread(t)}},
-        $("span", {class: "n"}, t.msgs.length > 1 ? String(t.msgs.length) : ""), $("span", {class: "s"}, t.subject),
-        $("span", {class: "m"}, `${t.other} · ${when(t.last.created_at)}`)));
-    } else {
-      const r = await call("mail", {folder, limit: 50});
-      rows = r.messages.map(m => $("div", {class: "row", on: {click: () => openThread({other: m.folder === "inbox" ? m.from : m.to, subject: baseSubject(m.subject), msgs: [m], last: m}, folder)}},
-        $("span", {class: "n"}, ""), $("span", {class: "s"}, m.subject), $("span", {class: "m"}, `${m.folder === "sent" ? "to " + m.to : m.from} · ${when(m.created_at)}`)));
-    }
+    // Like a mail program: one row per conversation (same person, same subject without the
+    // "Re:"s), newest conversation first. "conversations" also includes your own replies.
+    const threads = folder === "inbox" ? await conversations() : threadsOf((await call("mail", {folder, limit: 50})).messages);
+    const rows = threads.map(t => $("div", {class: "row" + (t.unread ? " unread" : ""), on: {click: () => openThread(t, folder)}},
+      $("span", {class: "n"}, t.msgs.length > 1 ? String(t.msgs.length) : ""), $("span", {class: "s"}, t.subject),
+      $("span", {class: "m"}, `${folder === "sent" ? "to " : ""}${t.other} · ${when(t.last.created_at)}`)));
     const tabs2 = [...tabs, $("button", {class: "plain", on: {click: () => addressBook(u => compose({to: u.username}))}}, "Address book")];
     return [panel(...tabs2, $("button", {class: "go", style: "float:right;margin-top:0", on: {click: () => compose({})}}, "New message")), panel(...(rows.length ? rows : [$("div", {class: "mute"}, folder === "inbox" ? "No mail yet." : "Empty.")]))];
   },
@@ -400,7 +407,7 @@ function compose(x) {
   const book = $("button", {class: "plain", style: "margin:0 0 0 8px;padding:2px 10px;font-size:13px", on: {click: () => addressBook(pick)}}, "Address book");
   document.getElementById("main").replaceChildren(panel($("h3", {}, "New private message"), $("label", {}, "To", book), to, picks, $("label", {}, "Subject"), subject, $("label", {}, "Message"), body,
     $("div", {class: "mute"}, "Not end-to-end encrypted: sysops relaying it could read it. Don't send passwords."),
-    $("button", {class: "go", on: {click: async () => { try { const a = {to: to.value.trim(), subject: subject.value.trim(), body: body.value}; if (x.reply_to) a.reply_to = x.reply_to; await call("mail_send", a); tab = "mail"; render({folder: "sent"}); } catch (e) { msg.replaceChildren(errBox(e)); } }}}, "Send"),
+    $("button", {class: "go", on: {click: async () => { try { const a = {to: to.value.trim(), subject: subject.value.trim(), body: body.value}; if (x.reply_to) a.reply_to = x.reply_to; await call("mail_send", a); await afterSend(a.to, a.subject); } catch (e) { msg.replaceChildren(errBox(e)); } }}}, "Send"),
     $("button", {class: "plain", on: {click: () => render()}}, "Cancel"), msg));
   if (!x.to) to.focus();
 }
