@@ -59,7 +59,8 @@ jobs:
         run: |
           BIN=dist/BeaconNet; [[ "$RUNNER_OS" == "Windows" ]] && BIN=dist/BeaconNet.exe
           export BEACONNET_HOME="$RUNNER_TEMP/bn"
-          "$BIN" --no-browser --no-tray --port 8799 &
+          # Started the way "Update now" starts the new copy (waits for the port, tidies up).
+          "$BIN" --no-browser --no-tray --port 8799 --after-update 1 &
           PID=$!
           for i in $(seq 30); do curl -sf -o page.html -H "Host: 127.0.0.1:8799" http://127.0.0.1:8799/ && break; sleep 1; done
           grep -q BEACONNET page.html
@@ -134,6 +135,17 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
+      - name: Attach BeaconNet-SHA256SUMS.txt
+        # "Update now" in the app installs a download only if it matches this list.
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir dl
+          gh release download "$GITHUB_REF_NAME" -D dl -p 'BeaconNet-*.zip' -p 'BeaconNet-*.tar.gz'
+          [[ $(ls dl | wc -l) -eq 3 ]] || { echo "expected 3 downloads"; ls dl; exit 1; }
+          (cd dl && sha256sum BeaconNet-*) > BeaconNet-SHA256SUMS.txt
+          cat BeaconNet-SHA256SUMS.txt
+          gh release upload "$GITHUB_REF_NAME" BeaconNet-SHA256SUMS.txt --clobber
       - name: Attach BeaconNet-version.txt
         env:
           GH_TOKEN: ${{ github.token }}

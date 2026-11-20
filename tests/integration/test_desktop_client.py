@@ -385,3 +385,121 @@ async def test_directory_search_and_paging_for_big_nodes(gateways, bbs, active_u
     assert (await call("directory", q="_"))["data"]["users"][0]["username"] == "pct_user"
     assert (await call("directory", limit=0))["error"]["code"] == "bad_request"
     conn_.close()
+
+
+def _fake_release(tmp_path, files: dict[str, bytes]):
+    """A fetch() for install_update that serves `files` like a GitHub release."""
+    import hashlib
+    served = []
+
+    def fetch(name, dest=None, limit=0):
+        served.append(name)
+        if name not in files:
+            raise OSError("404")
+        if dest is None:
+            return files[name]
+        Path(dest).write_bytes(files[name])
+        return hashlib.sha256(files[name]).hexdigest()
+    return fetch, served
+
+
+def _linux_release(new_program: bytes, sums_for=None):
+    import hashlib
+    import io
+    import tarfile
+    buf = io.BytesIO()
+    with tarfile.open(fileobj=buf, mode="w:gz") as t:
+        for name, data in (("BeaconNet", new_program), ("README.md", b"readme")):
+            info = tarfile.TarInfo(name)
+            info.size = len(data)
+            t.addfile(info, io.BytesIO(data))
+    tgz = buf.getvalue()
+    digest = hashlib.sha256(sums_for if sums_for is not None else tgz).hexdigest()
+    return {"BeaconNet-Linux-x86_64.tar.gz": tgz,
+            "BeaconNet-SHA256SUMS.txt": f"{digest}  BeaconNet-Linux-x86_64.tar.gz\n0000000000000000000000000000000000000000000000000000000000000000  BeaconNet-Windows.zip\n".encode()}
+
+
+async def test_desktop_update_now_swaps_and_restarts(tmp_path):
+    desk = load_desktop()
+    folder = tmp_path / "apps"
+    folder.mkdir()
+    target = folder / "BeaconNet"
+    target.write_bytes(b"old program")
+    launched = []
+    fetch, _ = _fake_release(tmp_path, _linux_release(b"new program"))
+    desk.install_update(target, 8765, fetch=fetch, launch=lambda t, p: launched.append((t, p)),
+                        asset="BeaconNet-Linux-x86_64.tar.gz")
+    assert target.read_bytes() == b"new program" and target.stat().st_mode & 0o111
+    assert (folder / "BeaconNet.old").read_bytes() == b"old program"      # removed on the next start
+    assert launched == [(target, 8765)]
+    assert sorted(p.name for p in folder.iterdir()) == ["BeaconNet", "BeaconNet.old"]   # no staging left
+
+    # A second update replaces the leftover .old too.
+    fetch, _ = _fake_release(tmp_path, _linux_release(b"newer program"))
+    desk.install_update(target, 8765, fetch=fetch, launch=lambda t, p: None, asset="BeaconNet-Linux-x86_64.tar.gz")
+    assert target.read_bytes() == b"newer program" and (folder / "BeaconNet.old").read_bytes() == b"new program"
+
+
+async def test_desktop_update_now_refuses_bad_downloads(tmp_path):
+    desk = load_desktop()
+    folder = tmp_path / "apps"
+    folder.mkdir()
+    target = folder / "BeaconNet"
+    target.write_bytes(b"old program")
+    asset = "BeaconNet-Linux-x86_64.tar.gz"
+
+    def untouched():
+        assert target.read_bytes() == b"old program"
+        assert sorted(p.name for p in folder.iterdir()) == ["BeaconNet"]
+
+    fetch, _ = _fake_release(tmp_path, _linux_release(b"evil", sums_for=b"something else"))   # checksum mismatch
+    with pytest.raises(desk.UpdateError, match="checksum"):
+        desk.install_update(target, 8765, fetch=fetch, launch=lambda t, p: None, asset=asset)
+    untouched()
+
+    files = _linux_release(b"new program")
+    del files["BeaconNet-SHA256SUMS.txt"]                                     # an older release: no checksums
+    fetch, served = _fake_release(tmp_path, files)
+    with pytest.raises(desk.UpdateError, match="online|Download update"):
+        desk.install_update(target, 8765, fetch=fetch, launch=lambda t, p: None, asset=asset)
+    assert served == ["BeaconNet-SHA256SUMS.txt"]                             # nothing else downloaded
+    untouched()
+
+    fetch, _ = _fake_release(tmp_path, _linux_release(b"new program"))       # the new copy won't start: put the old back
+    def broken(t, p):
+        raise OSError("exec format error")
+    with pytest.raises(desk.UpdateError, match="Download update"):
+        desk.install_update(target, 8765, fetch=fetch, launch=broken, asset=asset)
+    untouched()
+
+
+async def test_desktop_update_now_endpoint(tmp_path):
+    desk = load_desktop()
+    app = desk.App(desk.Settings(tmp_path), notify=lambda t, b: None)
+    web = desk.Web(app, 8799)
+    major, minor, _ = desk.version_tuple(desk.VERSION)
+    app.fetch_version = lambda: f"{major}.{minor + 1}.0"
+
+    await app.check_update()                     # running from source: Download only
+    assert app.state(0)["update"]["can_install"] is False
+    with pytest.raises(ValueError):
+        await web.api("POST", "/api/update/install", {})
+
+    target = tmp_path / "BeaconNet"
+    installs, quits = [], []
+    app.install_target = lambda: target
+    app.install = lambda t, port: installs.append((t, port))
+    app.quit = lambda: quits.append(1)
+    await app.check_update()
+    assert app.state(0)["update"]["can_install"] is True
+    assert (await web.api("POST", "/api/update/install", {}))["restarting"] is True
+    assert installs == [(target, 8799)] and app.installing is False
+    await asyncio.sleep(1.3)
+    assert quits == [1]                          # hands the port to the new copy
+
+    def fails(t, port):
+        raise desk.UpdateError("The download didn't match its checksum, so it wasn't installed.")
+    app.install = fails
+    with pytest.raises(ValueError, match="checksum"):
+        await web.api("POST", "/api/update/install", {})
+    assert app.installing is False and len(quits) == 1

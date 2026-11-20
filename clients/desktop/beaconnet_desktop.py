@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import hashlib
 import json
 import os
 import platform
@@ -27,9 +28,13 @@ import shutil
 import subprocess
 import sys
 import ssl
+import tarfile
+import threading
 import time
+import urllib.error
 import urllib.request
 import webbrowser
+import zipfile
 from pathlib import Path
 from typing import Any
 
@@ -38,7 +43,7 @@ try:
 except ImportError:  # pragma: no cover - the launchers install it
     sys.exit("BeaconNet Desktop needs the 'asyncssh' package:  python -m pip install --user asyncssh")
 
-VERSION = "1.4.3"
+VERSION = "1.4.4"
 SUBSYSTEM = "beaconnet-client"
 POLL_SECONDS = 30
 INFO_REFRESH_CHECKS = 10            # re-read node name/id every ~5 minutes
@@ -75,6 +80,168 @@ def fetch_latest_version(timeout: float = 15) -> str:
     if not VERSION_RE.match(v):
         raise ValueError("unexpected version file")
     return v
+
+
+# --- installing an update (the built apps only) -------------------------------------------
+# "Update now" downloads this computer's file from the latest release, checks it against
+# BeaconNet-SHA256SUMS.txt from the same release, puts it where the running app is (the old
+# one is kept as *.old until the next start), starts it on the same port and quits.
+
+SUMS_FILE = "BeaconNet-SHA256SUMS.txt"
+MAX_DOWNLOAD = 300 * 1024 * 1024
+
+
+class UpdateError(Exception):
+    """A reason the update can't be installed, worded for the person using the app."""
+
+
+def _ssl_context() -> ssl.SSLContext:
+    try:
+        import certifi
+        return ssl.create_default_context(cafile=certifi.where())
+    except ImportError:
+        return ssl.create_default_context()
+
+
+def download_release_file(name: str, dest: Path | None = None, limit: int = MAX_DOWNLOAD) -> bytes | str:
+    """Blocking: fetch one file of the latest release over HTTPS. With `dest`, stream it there
+    and return its SHA-256; otherwise return the bytes (small files only)."""
+    req = urllib.request.Request(f"{RELEASES}/download/{name}", headers={"User-Agent": f"BeaconNet-Desktop/{VERSION}"})
+    with urllib.request.urlopen(req, timeout=60, context=_ssl_context()) as r:  # noqa: S310 - fixed https URL
+        if dest is None:
+            return r.read(limit)
+        h, size = hashlib.sha256(), 0
+        with open(dest, "wb") as f:
+            while chunk := r.read(1 << 16):
+                size += len(chunk)
+                if size > limit:
+                    raise UpdateError("The download is far bigger than expected, so it wasn't installed.")
+                h.update(chunk)
+                f.write(chunk)
+        return h.hexdigest()
+
+
+def install_target() -> Path | None:
+    """What gets replaced: the .exe / Linux program, or the macOS .app. None when running
+    from the Python source (the launchers update with git) or from somewhere read-only."""
+    if not getattr(sys, "frozen", False):
+        return None
+    exe = Path(sys.executable).resolve()
+    if sys.platform == "darwin":
+        app = next((p for p in exe.parents if p.suffix == ".app"), None)
+        if app is None or "AppTranslocation" in str(app):     # run straight from Downloads
+            return None
+        return app
+    return exe
+
+
+def _rm(p: Path) -> None:
+    if p.is_dir() and not p.is_symlink():
+        shutil.rmtree(p, ignore_errors=True)
+    elif p.exists() or p.is_symlink():
+        p.unlink()
+
+
+def _launch(target: Path, port: int) -> None:
+    args = ["--no-browser", "--port", str(port), "--after-update", str(os.getpid())]
+    env = dict(os.environ, PYINSTALLER_RESET_ENVIRONMENT="1")   # a fresh copy, not this one's files
+    if sys.platform == "darwin":
+        subprocess.Popen(["open", "-n", str(target), "--args", *args], env=env)
+    elif sys.platform == "win32":
+        flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)
+        subprocess.Popen([str(target), *args], env=env, creationflags=flags, close_fds=True)
+    else:
+        subprocess.Popen([str(target), *args], env=env, start_new_session=True, stdin=subprocess.DEVNULL,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+
+def install_update(target: Path, port: int, fetch=download_release_file, launch=_launch,
+                   asset: str | None = None) -> None:
+    """Blocking. Download, verify, swap and start the new app. On any failure the app in
+    place is left (or put back) as it was and UpdateError explains what to do."""
+    asset = asset or platform_asset()
+    stage = target.parent / ".beaconnet-update"
+    old = target.with_name(target.name + ".old")
+    try:
+        _rm(stage)
+        stage.mkdir()
+    except OSError:
+        raise UpdateError(f"BeaconNet can't write to {target.parent}, so it can't update itself there. "
+                          "Use Download update instead.") from None
+    try:
+        try:
+            sums = {}
+            for line in fetch(SUMS_FILE, None, 64 * 1024).decode("ascii", "replace").splitlines():
+                parts = line.split()
+                if len(parts) == 2 and re.fullmatch(r"[0-9a-f]{64}", parts[0]):
+                    sums[parts[1].lstrip("*")] = parts[0]
+            if asset not in sums:
+                raise UpdateError("This release can't be installed from inside the app. Use Download update instead.")
+            got = fetch(asset, stage / asset)
+        except UpdateError:
+            raise
+        except urllib.error.HTTPError as exc:
+            if exc.code == 404:
+                raise UpdateError("This release can't be installed from inside the app. Use Download update instead.") from None
+            raise UpdateError(f"GitHub didn't send the update (HTTP {exc.code}). Try again later.") from None
+        except Exception as exc:
+            raise UpdateError(f"Couldn't download the update ({exc.__class__.__name__}). Is this computer online?") from None
+        if got != sums[asset]:
+            raise UpdateError("The download didn't match its checksum, so it wasn't installed. Try again later.")
+
+        name = target.name
+        if asset.endswith(".zip") and sys.platform == "darwin":
+            out = stage / "x"
+            subprocess.run(["ditto", "-x", "-k", str(stage / asset), str(out)], check=True, capture_output=True)
+            new = out / "BeaconNet.app"
+        elif asset.endswith(".zip"):
+            new = stage / "new.exe"
+            with zipfile.ZipFile(stage / asset) as z:
+                new.write_bytes(z.read("BeaconNet.exe"))
+        else:
+            new = stage / "new"
+            with tarfile.open(stage / asset) as t:
+                m = t.getmember("BeaconNet")
+                if not m.isreg():
+                    raise UpdateError("The download isn't what was expected, so it wasn't installed.")
+                new.write_bytes(t.extractfile(m).read())  # type: ignore[union-attr]
+            new.chmod(0o755)
+        if not new.exists():
+            raise UpdateError("The download isn't what was expected, so it wasn't installed.")
+
+        try:
+            _rm(old)                  # left by the update before this one
+        except OSError:
+            raise UpdateError("An older update is still being tidied up. Try again in a minute.") from None
+        target.rename(old)            # allowed while running, on Windows too
+        try:
+            new.rename(stage.parent / name)
+            launch(target, port)
+        except Exception:
+            _rm(target) if target.exists() else None
+            old.rename(target)
+            raise
+    except UpdateError:
+        raise
+    except Exception as exc:
+        raise UpdateError(f"The update couldn't be installed ({exc.__class__.__name__}: {str(exc)[:120]}). "
+                          "Use Download update instead.") from None
+    finally:
+        shutil.rmtree(stage, ignore_errors=True)
+
+
+def tidy_after_update() -> None:
+    """Remove what the last update left behind (the old app may still be closing)."""
+    target = install_target()
+    if target is None:
+        return
+    for _ in range(12):
+        try:
+            _rm(target.with_name(target.name + ".old"))
+            shutil.rmtree(target.parent / ".beaconnet-update", ignore_errors=True)
+            return
+        except OSError:
+            time.sleep(5)
 
 
 # --- settings ---------------------------------------------------------------------------
@@ -314,6 +481,10 @@ class App:
         self.update_error = ""
         self.update_checked = 0.0
         self.fetch_version = fetch_latest_version
+        self.install_target = install_target
+        self.install = install_update
+        self.installing = False
+        self.quit = lambda: os._exit(0)
         self._update_task: asyncio.Task | None = None
 
     # -- connect ----------------------------------------------------------------------
@@ -434,7 +605,8 @@ class App:
             self.update = None
             return
         new = self.update is None or self.update["version"] != latest
-        self.update = {"version": latest, "download": f"{RELEASES}/download/{platform_asset()}", "notes": RELEASES}
+        self.update = {"version": latest, "download": f"{RELEASES}/download/{platform_asset()}", "notes": RELEASES,
+                       "can_install": self.install_target() is not None}
         if new and latest != self.s["skipped_version"]:
             self._event("update", f"BeaconNet Desktop {latest} is available",
                         f"You have {VERSION}. Open BeaconNet to update.")
@@ -504,7 +676,8 @@ class App:
             "events": [e for e in self.events if e["seq"] > since],
             "notify": {k: s[k] for k in ("notify_bulletins", "notify_emergency", "notify_mail", "notify_registrations")},
             "connection": s["connection"], "radio": {**RADIO_DEFAULTS, **(s["radio"] or {})},
-            "update": self.update and {**self.update, "skipped": self.update["version"] == s["skipped_version"]},
+            "update": self.update and {**self.update, "skipped": self.update["version"] == s["skipped_version"],
+                                       "installing": self.installing},
             "update_error": self.update_error, "check_updates": s["check_updates"],
             "update_checked": time.strftime("%d %b %H:%M", time.localtime(self.update_checked)) if self.update_checked else None,
         }
@@ -599,6 +772,20 @@ class Web:
             if app.update:
                 app.s.update(skipped_version=app.update["version"])
             return app.state(0)
+        if path == "/api/update/install":
+            target = app.install_target()
+            if not app.update or target is None or app.installing:
+                raise ValueError("there is no update to install here")
+            app.installing = True
+            try:
+                await asyncio.to_thread(app.install, target, self.port)
+            except UpdateError as exc:
+                raise ValueError(str(exc)) from None
+            finally:
+                app.installing = False
+            # The new copy is starting and waits for this one to let go of the port.
+            asyncio.get_running_loop().call_later(1.0, app.quit)
+            return {"ok": True, "restarting": True}
         if path == "/api/update/open":
             # Only ever opens our own release links, never a URL from the page.
             if app.update and d.get("what") in ("download", "notes"):
@@ -681,8 +868,6 @@ def run_with_tray(url: str, background) -> bool:  # type: ignore[no-untyped-def]
         import pystray
     except Exception:
         return False
-    import threading
-
     def quit_app(icon, _item=None):  # type: ignore[no-untyped-def]
         icon.stop()
         os._exit(0)
@@ -717,10 +902,19 @@ def main() -> None:
     ap.add_argument("--no-browser", action="store_true", help="don't open the window on start")
     ap.add_argument("--no-tray", action="store_true", help="no tray / menu-bar icon (e.g. on a server)")
     ap.add_argument("--version", action="version", version=VERSION)
+    ap.add_argument("--after-update", type=int, metavar="PID", help=argparse.SUPPRESS)
     args = ap.parse_args()
     url = f"http://127.0.0.1:{args.port}/"
 
     import socket
+    if args.after_update:
+        # Started by "Update now": give the old copy up to 30 seconds to free the port.
+        for _ in range(60):
+            with socket.socket() as probe:
+                if probe.connect_ex(("127.0.0.1", args.port)) != 0:
+                    break
+            time.sleep(0.5)
+        threading.Thread(target=tidy_after_update, daemon=True).start()
     with socket.socket() as probe:
         if probe.connect_ex(("127.0.0.1", args.port)) == 0:
             # Already running: just show it.

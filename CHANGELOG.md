@@ -2,6 +2,15 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.9.4 - Update now
+
+* BeaconNet Desktop 1.4.4: the update banner has **Update now**. The app downloads the new
+  version, checks it against `BeaconNet-SHA256SUMS.txt` (new on each release), replaces
+  itself, and reopens; the page reloads by itself. If anything goes wrong, the current app
+  is left as it was and the banner explains why, with **Download update** as before. Apps
+  run from the Python source, or from a read-only place (a macOS app still in Downloads),
+  keep the Download button.
+
 ## 1.9.3 - mail stays in the conversation
 
 * BeaconNet Desktop 1.4.3:

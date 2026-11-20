@@ -38,7 +38,7 @@ button.plain{background:none;border:1px solid var(--line);color:var(--ink);borde
 <script>
 "use strict";
 const TOKEN = "__TOKEN__";
-let S = {status: "loading", events: []}, tab = "news", since = 0, news = [], lastOpen = null;
+let S = {status: "loading", events: []}, tab = "news", since = 0, news = [], lastOpen = null, updating = null;
 const $ = (t, a = {}, ...kids) => { const e = document.createElement(t); for (const [k, v] of Object.entries(a)) { if (k === "on") for (const [ev, f] of Object.entries(v)) e.addEventListener(ev, f); else if (k === "class") e.className = v; else e.setAttribute(k, v); } for (const c of kids) e.append(c instanceof Node ? c : document.createTextNode(c ?? "")); return e; };
 async function api(path, data = {}) {
   const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json", "X-BeaconNet-Token": TOKEN}, body: JSON.stringify(data)});
@@ -60,7 +60,11 @@ async function poll() {
     const was = S.status + "/" + S.sysop; S = st;
     head();
     if (was !== S.status + "/" + S.sysop || (tab === "news" && st.events.length)) render();
-  } catch (e) { S.status = "app stopped"; head(); }
+  } catch (e) {
+    // A new copy of the app (after "Update now") has a new token: load its page.
+    if (e.message === "bad token") { location.reload(); return; }
+    S.status = updating ? "restarting" : "app stopped"; head();
+  }
 }
 const RE_PREFIX = /^\s*((re|fwd?|aw|sv)\s*(\[\d+\])?\s*:\s*)+/i;
 function baseSubject(subj) { return (subj || "").replace(RE_PREFIX, "").trim() || "(no subject)"; }
@@ -111,10 +115,26 @@ async function openThread(t, folder = "inbox") {
 }
 function updateBanner() {
   const u = S.update, box = document.getElementById("upd");
+  if (updating) { box.replaceChildren(panel(...updating)); return; }
   if (!u || u.skipped) { box.replaceChildren(); return; }
+  const now = async () => {
+    updating = [$("b", {}, `Updating to BeaconNet Desktop ${u.version}…`), " ", $("span", {class: "mute"}, "Downloading and checking it. This can take a minute.")];
+    head();
+    try {
+      await api("/api/update/install");
+      updating = [$("b", {}, "Restarting BeaconNet…"), " ", $("span", {class: "mute"}, `This page reloads by itself when ${u.version} is running. If it hasn't within a minute, open BeaconNet again.`)];
+    } catch (e) {
+      updating = null; head();
+      box.append(panel(errBox(e)));
+      return;
+    }
+    head();
+  };
   box.replaceChildren(panel($("b", {}, `Update available: BeaconNet Desktop ${u.version}`), ` (you have ${S.version}). `,
-    $("span", {class: "mute"}, "Download it, quit BeaconNet from the tray icon, then open the new one. Your login and settings are kept."), $("br"),
-    $("button", {class: "go", on: {click: () => api("/api/update/open", {what: "download"})}}, "Download update"), " ",
+    $("span", {class: "mute"}, u.can_install ? "BeaconNet downloads it, checks it, swaps itself and reopens. Your login and settings are kept."
+                                             : "Download it, quit BeaconNet from the tray icon, then open the new one. Your login and settings are kept."), $("br"),
+    u.can_install ? $("button", {class: "go", on: {click: now}}, "Update now")
+                  : $("button", {class: "go", on: {click: () => api("/api/update/open", {what: "download"})}}, "Download update"), " ",
     $("button", {class: "plain", on: {click: () => api("/api/update/open", {what: "notes"})}}, "What's new"),
     $("button", {class: "plain", on: {click: async () => { await api("/api/update/skip"); await poll(); }}}, "Not now")));
 }
