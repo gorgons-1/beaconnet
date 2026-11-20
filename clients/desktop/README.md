@@ -33,6 +33,9 @@ There's nothing else to install. A window opens at the login screen, and a small
 icon appears in the system tray (Windows), the menu bar (macOS) or the panel (Linux).
 Closing the window keeps the notifications running; use the icon's **Open** or **Quit**.
 
+A bell rings when new private mail arrives, even with the window closed. Turn it on or off
+in **Settings > Sound**, which also has **Test the bell**.
+
 **The first time only**, your computer warns you, because the app isn't signed with a
 paid certificate:
 

@@ -20,6 +20,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import math
 import os
 import platform
 import re
@@ -33,6 +34,7 @@ import threading
 import time
 import urllib.error
 import urllib.request
+import wave
 import webbrowser
 import zipfile
 from pathlib import Path
@@ -43,7 +45,7 @@ try:
 except ImportError:  # pragma: no cover - the launchers install it
     sys.exit("BeaconNet Desktop needs the 'asyncssh' package:  python -m pip install --user asyncssh")
 
-VERSION = "1.4.4"
+VERSION = "1.4.5"
 SUBSYSTEM = "beaconnet-client"
 POLL_SECONDS = 30
 INFO_REFRESH_CHECKS = 10            # re-read node name/id every ~5 minutes
@@ -272,7 +274,7 @@ class Settings:
 
     DEFAULTS: dict[str, Any] = {"host": "", "port": 2222, "username": "", "host_key": None, "last_seen": None,
                                 "notify_bulletins": True, "notify_emergency": True, "notify_mail": True,
-                                "notify_registrations": True,
+                                "notify_registrations": True, "notify_bell": True,   # bell sound on new mail
                                 # Radio mode (Phase 3): saved now, used once nodes answer on packet radio.
                                 "connection": "internet", "radio": {},
                                 # App updates: check GitHub twice a day; "Not now" hides one version.
@@ -392,6 +394,48 @@ def desktop_notify(title: str, body: str) -> None:
         pass
 
 
+def make_bell(path: Path) -> Path:
+    """Write a short bell sound (a struck-bell chord that fades out) as a WAV, once."""
+    if path.exists():
+        return path
+    rate, secs = 22050, 1.4
+    partials = ((1.0, 1.0, 2.2), (2.0, 0.5, 3.5), (2.76, 0.35, 5.0), (5.4, 0.15, 8.0))   # ratio, level, decay
+    frames = bytearray()
+    for i in range(int(rate * secs)):
+        t = i / rate
+        v = sum(lvl * math.exp(-dec * t) * math.sin(2 * math.pi * 880 * r * t) for r, lvl, dec in partials)
+        v *= min(1.0, t * 400) * 0.45                    # no click at the start
+        frames += int(max(-1.0, min(1.0, v)) * 32767).to_bytes(2, "little", signed=True)
+    tmp = path.with_suffix(".tmp")
+    with wave.open(str(tmp), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(rate)
+        w.writeframes(bytes(frames))
+    os.replace(tmp, path)
+    return path
+
+
+def ring_bell(home: Path) -> None:
+    """Best effort, in the background: play the bell with what the system already has."""
+    try:
+        bell = str(make_bell(home / "bell.wav"))
+        if sys.platform == "win32":
+            import winsound
+            winsound.PlaySound(bell, winsound.SND_FILENAME | winsound.SND_ASYNC | winsound.SND_NODEFAULT)
+            return
+        if sys.platform == "darwin":
+            cmd = ["afplay", bell]
+        else:
+            player = next((p for p in ("paplay", "pw-play", "aplay") if shutil.which(p)), None)
+            if player is None:
+                return
+            cmd = [player, bell] if player != "aplay" else ["aplay", "-q", bell]
+        subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception:
+        pass
+
+
 # --- connection to the BBS ----------------------------------------------------------------
 
 
@@ -465,6 +509,7 @@ class App:
     def __init__(self, settings: Settings, notify=desktop_notify) -> None:  # type: ignore[no-untyped-def]
         self.s = settings
         self.notify = notify
+        self.ring = lambda: ring_bell(settings.home)
         self.link: Link | None = None
         self.me: dict = {}
         self.info: dict = {}
@@ -574,11 +619,15 @@ class App:
         latest = max([f["latest"], s["last_seen"] or 0] + [b["number"] for b in f["bulletins"]])
         if latest != s["last_seen"]:
             s.update(last_seen=latest)
+        new_mail = False
         for m in f["unread_mail"]:
             if m["id"] not in self.notified_mail:
                 self.notified_mail.add(m["id"])
+                new_mail = True
                 if s["notify_mail"]:
                     self._event("mail", f"Mail from {m['from']}", m["subject"], m["id"], pop=not first)
+        if new_mail and not first and s["notify_bell"]:
+            self.ring()                     # once per check, however many arrived
         for p in f.get("pending") or []:
             if p["id"] not in self.notified_pending:
                 self.notified_pending.add(p["id"])
@@ -674,7 +723,7 @@ class App:
             "sysop": bool(self.me.get("sysop")),
             "device_key": self.device_fingerprint(),
             "events": [e for e in self.events if e["seq"] > since],
-            "notify": {k: s[k] for k in ("notify_bulletins", "notify_emergency", "notify_mail", "notify_registrations")},
+            "notify": {k: s[k] for k in ("notify_bulletins", "notify_emergency", "notify_mail", "notify_registrations", "notify_bell")},
             "connection": s["connection"], "radio": {**RADIO_DEFAULTS, **(s["radio"] or {})},
             "update": self.update and {**self.update, "skipped": self.update["version"] == s["skipped_version"],
                                        "installing": self.installing},
@@ -760,6 +809,9 @@ class Web:
             return app.state(0)
         if path == "/api/notify":
             app.s.update(**{k: bool(v) for k, v in d.items() if k in Settings.DEFAULTS and k.startswith("notify_")})
+            return {"ok": True}
+        if path == "/api/bell":                     # the Test button in Settings
+            app.ring()
             return {"ok": True}
         if path == "/api/update/check":            # asking by hand also un-hides a skipped version
             app.s.update(skipped_version=None)

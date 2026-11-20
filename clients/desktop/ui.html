@@ -363,6 +363,8 @@ async function internetSettings() {
     const boxes = [box("notify_emergency", "EMERGENCY and priority bulletins"), box("notify_bulletins", "All other new bulletins"), box("notify_mail", "New private mail")];
     if (S.sysop) boxes.push(box("notify_registrations", "New registrations waiting for approval"));
     out.push(panel($("h3", {}, "Notify me about"), ...boxes));
+    out.push(panel($("h3", {}, "Sound"), box("notify_bell", "Ring a bell when new private mail arrives"),
+      $("button", {class: "plain", on: {click: () => api("/api/bell")}}, "Test the bell")));
     if (S.status === "connected" || S.remembered) out.push(panel($("button", {class: "plain", on: {click: async () => { if (confirm("Forget this node and this computer's key?")) { await api("/api/logout"); poll(); render(); } }}}, "Forget this node"),
       $("div", {class: "mute"}, "To stop this computer logging in, also revoke its key in the BBS under My Account & Keys.")));
     if (S.node && S.node.disclaimer) out.push(panel($("div", {class: "mute"}, S.node.disclaimer)));

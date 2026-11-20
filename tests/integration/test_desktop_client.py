@@ -503,3 +503,42 @@ async def test_desktop_update_now_endpoint(tmp_path):
     with pytest.raises(ValueError, match="checksum"):
         await web.api("POST", "/api/update/install", {})
     assert app.installing is False and len(quits) == 1
+
+
+async def test_desktop_bell_on_new_mail(tmp_path):
+    import wave
+    desk = load_desktop()
+    app = desk.App(desk.Settings(tmp_path), notify=lambda t, b: None)
+    web = desk.Web(app, 8765)
+    rings = []
+    app.ring = lambda: rings.append(1)
+    mail = []
+
+    class FakeLink:
+        async def call(self, op, **kw):
+            assert op in ("feed", "hello")
+            return {"bulletins": [], "latest": 0, "unread_mail": list(mail), "sysop": False} if op == "feed" else {"info": {}}
+    app.link = FakeLink()
+
+    mail.append({"id": 1, "from": "bob", "subject": "waiting already"})
+    await app.check()                                   # start-up: old unread mail doesn't ring
+    assert rings == []
+    mail += [{"id": 2, "from": "bob", "subject": "a"}, {"id": 3, "from": "ann", "subject": "b"}]
+    await app.check()
+    assert rings == [1]                                 # one bell for two new messages
+    await app.check()
+    assert rings == [1]                                 # nothing new, no bell
+
+    assert app.state(0)["notify"]["notify_bell"] is True               # on by default
+    await web.api("POST", "/api/notify", {"notify_bell": False})        # Settings > Sound
+    assert app.s["notify_bell"] is False and desk.Settings(tmp_path)["notify_bell"] is False   # saved
+    mail.append({"id": 4, "from": "bob", "subject": "c"})
+    await app.check()
+    assert rings == [1]
+
+    await web.api("POST", "/api/bell", {})              # Test button rings whatever the setting
+    assert rings == [1, 1]
+
+    bell = desk.make_bell(tmp_path / "bell.wav")
+    with wave.open(str(bell)) as w:
+        assert w.getnchannels() == 1 and w.getframerate() == 22050 and 1.0 < w.getnframes() / 22050 < 2.0

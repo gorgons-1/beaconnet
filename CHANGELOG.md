@@ -2,6 +2,13 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.9.5 - a bell for new mail
+
+* BeaconNet Desktop 1.4.5: a bell rings when new private mail arrives (once per check,
+  however many came in; not for mail that was already waiting when the app started). It
+  plays even with the window closed. **Settings > Sound** turns it on or off and has a
+  **Test the bell** button.
+
 ## 1.9.4 - Update now
 
 * BeaconNet Desktop 1.4.4: the update banner has **Update now**. The app downloads the new
