@@ -45,7 +45,7 @@ try:
 except ImportError:  # pragma: no cover - the launchers install it
     sys.exit("BeaconNet Desktop needs the 'asyncssh' package:  python -m pip install --user asyncssh")
 
-VERSION = "1.4.7"
+VERSION = "1.4.8"
 SUBSYSTEM = "beaconnet-client"
 POLL_SECONDS = 30
 INFO_REFRESH_CHECKS = 10            # re-read node name/id every ~5 minutes
@@ -941,6 +941,9 @@ def run_with_tray(url: str, background) -> bool:  # type: ignore[no-untyped-def]
 
 async def serve(args: argparse.Namespace, started) -> None:  # type: ignore[no-untyped-def]
     app = App(Settings(config_dir()))
+    if args.after_update:       # shown in What's new, so you can see the update worked
+        app._event("info", f"BeaconNet Desktop updated to {VERSION}", "Update now finished: this is the new version.",
+                   pop=False)
     web = Web(app, args.port)
     server = await asyncio.start_server(web.handle, "127.0.0.1", args.port)
     started()
