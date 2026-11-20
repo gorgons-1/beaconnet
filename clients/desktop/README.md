@@ -82,7 +82,7 @@ button next to **To** on a new message. The header shows your app version (e.g. 
 
 The app checks GitHub twice a day (it asks only "what's the latest version?" and sends
 nothing about you). When there's a newer version, the header shows "vX.Y.Z available" (click it) and
-**Settings > App updates** offers **Update now**:
+**Settings > App updates** shows an **Update now** button next to **Check now**:
 BeaconNet downloads it, checks it against the release's `BeaconNet-SHA256SUMS.txt`, swaps
 itself and reopens on its own. The page reloads by itself. Your login and settings are kept,
 and the previous copy is removed on the next start.

@@ -16,7 +16,7 @@ nav button.sel{background:var(--accent);color:var(--accent-ink);border-color:var
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:20}
 .dlg{width:min(640px,100%);max-height:calc(100vh - 80px);display:flex;flex-direction:column;margin:0}.dlist{overflow:auto;flex:1;min-height:120px;margin-top:8px;border:1px solid var(--line);border-radius:6px}.row.me{cursor:default;opacity:.6}
 .msg{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}.msg pre{margin:6px 0 4px}
-.offer{border:1px solid var(--accent);border-radius:6px;padding:10px 12px;margin:10px 0}.offer b{color:var(--accent)}header .ver.new{cursor:pointer;text-decoration:underline}
+#upd-note b{color:var(--accent)}header .ver.new{cursor:pointer;text-decoration:underline}
 main{max-width:980px;margin:0 auto;padding:8px 16px 40px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin:10px 0}
 .row{display:flex;gap:10px;align-items:baseline;padding:8px 6px;border-bottom:1px solid var(--line);cursor:pointer}.row:last-child{border-bottom:0}.row:hover{background:color-mix(in srgb,var(--accent) 7%,transparent)}
 .row .n{color:var(--mute);font-variant-numeric:tabular-nums;min-width:48px}.row .s{flex:1;min-width:0;overflow-wrap:anywhere}.row .m{color:var(--mute);font-size:13px;white-space:nowrap}
@@ -113,14 +113,15 @@ async function openThread(t, folder = "inbox") {
   } catch (e) { main.replaceChildren(panel(errBox(e))); }
 }
 function updateOffer() {
-  // Shown inside Settings > App updates (the header says "vX available" and links there).
-  const box = document.getElementById("upd-offer"), u = S.update;
-  if (!box) return;
-  if (updating) { box.replaceChildren($("div", {class: "offer"}, ...updating)); return; }
-  if (!u) { box.replaceChildren(); return; }
+  // Settings > App updates: an "Update now" button next to "Check now", and a line below it.
+  // (The header says "vX available" and links there.)
+  const btns = document.getElementById("upd-btns"), note = document.getElementById("upd-note"), u = S.update;
+  if (!btns || !note) return;
+  if (updating) { btns.replaceChildren(); note.replaceChildren(...updating); return; }
+  if (!u) { btns.replaceChildren(); note.replaceChildren(); return; }
   const now = async () => {
     updateErr = null;
-    updating = [$("b", {}, `Updating to BeaconNet Desktop ${u.version}…`), " ", $("span", {class: "mute"}, "Downloading and checking it. This can take a minute.")];
+    updating = [$("b", {}, `Updating to ${u.version}…`), " ", $("span", {class: "mute"}, "Downloading and checking it. This can take a minute.")];
     head();
     try {
       await api("/api/update/install");
@@ -128,14 +129,13 @@ function updateOffer() {
     } catch (e) { updating = null; updateErr = e; }
     head();
   };
-  box.replaceChildren($("div", {class: "offer"}, $("b", {}, `Update available: BeaconNet Desktop ${u.version}`), ` (you have ${S.version}). `,
-    $("span", {class: "mute"}, u.can_install ? "BeaconNet downloads it, checks it, swaps itself and reopens. Your login and settings are kept."
-                                             : "Download it, quit BeaconNet from the tray icon, then open the new one. Your login and settings are kept."), $("br"),
-    u.can_install ? $("button", {class: "go", on: {click: now}}, "Update now")
-                  : $("button", {class: "go", on: {click: () => api("/api/update/open", {what: "download"})}}, "Download update"), " ",
-    $("button", {class: "plain", on: {click: () => api("/api/update/open", {what: "notes"})}}, "What's new"),
-    u.skipped ? "" : $("button", {class: "plain", title: "Stop highlighting this version in the header", on: {click: async () => { await api("/api/update/skip"); await poll(); }}}, "Not now"),
-    updateErr ? errBox(updateErr) : ""));
+  btns.replaceChildren(
+    u.can_install ? $("button", {class: "go", style: "margin-right:6px", on: {click: now}}, `Update now to ${u.version}`)
+                  : $("button", {class: "go", style: "margin-right:6px", on: {click: () => api("/api/update/open", {what: "download"})}}, `Download ${u.version}`),
+    $("button", {class: "plain", on: {click: () => api("/api/update/open", {what: "notes"})}}, "What's new"));
+  note.replaceChildren(updateErr ? errBox(updateErr) : $("span", {class: "mute"}, u.can_install
+    ? `BeaconNet Desktop ${u.version} is available (you have ${S.version}). Update now downloads it, checks it, swaps itself and reopens; your login and settings are kept.`
+    : `BeaconNet Desktop ${u.version} is available (you have ${S.version}). Download it, quit BeaconNet from the tray icon, then open the new one; your login and settings are kept.`));
 }
 function head() {
   updateOffer();
@@ -306,8 +306,8 @@ function updateSettings() {
     } catch (e) { msg.replaceChildren(errBox(e)); }
   }}}, "Check now");
   return panel($("h3", {}, "App updates"), $("div", {}, `BeaconNet Desktop ${S.version}`, S.update_checked ? $("span", {class: "mute"}, ` · last checked ${S.update_checked}`) : ""),
-    $("div", {id: "upd-offer"}),
-    $("label", {class: "chk"}, auto, "Check for updates automatically (asks GitHub twice a day; nothing about you is sent)"), now, msg);
+    $("label", {class: "chk"}, auto, "Check for updates automatically (asks GitHub twice a day; nothing about you is sent)"),
+    $("div", {}, now, $("span", {id: "upd-btns"})), $("div", {id: "upd-note", style: "margin-top:6px"}), msg);
 }
 function radioSettings() {
   const r = S.radio || {};

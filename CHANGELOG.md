@@ -2,6 +2,12 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.9.7 - Update now next to Check now
+
+* BeaconNet Desktop 1.4.7: in **Settings > App updates**, a new version shows as an
+  **Update now to X.Y.Z** button (and *What's new*) right next to **Check now**, with one
+  line of explanation, progress or error underneath.
+
 ## 1.9.6 - updates offered in Settings
 
 * BeaconNet Desktop 1.4.6: a new version is offered inside **Settings > App updates**
