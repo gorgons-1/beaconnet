@@ -2,6 +2,14 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.9.1 - address book and version in the header
+
+* BeaconNet Desktop 1.4.1:
+  * The header shows the app version, and "vX.Y.Z available" when there's an update.
+  * **Address book** button next to *To* on a new message (the whole member list, one
+    click to pick); the Mail tab's Members button is now Address book. If the list can't
+    load, it says why instead of showing nothing. The browser no longer autofills *To*.
+
 ## 1.9.0 - conversations and app updates
 
 * BeaconNet Desktop 1.4.0:

@@ -72,7 +72,8 @@ in to the BBS once and set one under *My Account & Keys > P*.
 **Mail** shows one line per conversation, like a mail program: everything you and the
 other person wrote under the same subject (however many times it was answered), newest
 conversation first. Click it to read the whole exchange in order and reply. **Sent** and
-**Archive** list single messages. **Members** lists everyone on the node you can write to.
+**Archive** list single messages. **Address book** lists everyone on the node you can write to; it's also a
+button next to **To** on a new message. The header shows your app version (e.g. `v1.4.1`).
 
 ## Updates
 

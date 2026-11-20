@@ -9,7 +9,7 @@
 @media (prefers-color-scheme:dark){:root{--bg:#121417;--panel:#1b1e23;--ink:#e7e9ec;--mute:#9aa3ae;--line:#2c3138;--accent:#e2733f;--accent-ink:#111;--emer:#ff6b6b;--emer-bg:#3a1b1d;--ok:#6fcf97;--warn:#e0b341}}
 *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 header{display:flex;align-items:center;gap:12px;padding:10px 16px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:2}
-header h1{font-size:17px;margin:0;letter-spacing:.5px}header .node{color:var(--mute);font-size:13px}
+header h1{font-size:17px;margin:0;letter-spacing:.5px}header .ver{color:var(--mute);font-size:12px;margin:0 4px 0 -6px}header .ver.new{color:var(--accent);font-weight:600}header .node{color:var(--mute);font-size:13px}
 .dot{width:9px;height:9px;border-radius:50%;background:var(--mute);display:inline-block;margin-right:6px}.dot.on{background:var(--ok)}.dot.off{background:var(--emer)}
 nav{display:flex;gap:4px;padding:8px 16px;flex-wrap:wrap}nav button{border:1px solid var(--line);background:var(--panel);color:var(--ink);padding:6px 12px;border-radius:6px;cursor:pointer;font:inherit}
 nav button.sel{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}nav .badge{background:var(--emer);color:#fff;border-radius:9px;padding:0 6px;font-size:12px;margin-left:4px}
@@ -29,7 +29,7 @@ button.plain{background:none;border:1px solid var(--line);color:var(--ink);borde
 </style>
 </head>
 <body>
-<header><h1>BEACONNET</h1><span class="node" id="node"></span><span style="flex:1"></span><span id="conn" class="mute"><span class="dot"></span>…</span></header>
+<header><h1>BEACONNET</h1><span class="ver" id="ver"></span><span class="node" id="node"></span><span style="flex:1"></span><span id="conn" class="mute"><span class="dot"></span>…</span></header>
 <nav id="tabs"></nav>
 <div id="upd"></div>
 <main id="main"></main>
@@ -104,6 +104,9 @@ function updateBanner() {
 }
 function head() {
   updateBanner();
+  const ver = document.getElementById("ver"), newer = S.update && !S.update.skipped;
+  ver.textContent = S.version ? `v${S.version}` + (newer ? ` · v${S.update.version} available` : "") : "";
+  ver.className = "ver" + (newer ? " new" : "");
   const on = S.status === "connected";
   document.getElementById("node").textContent = S.node && S.node.node_id ? `${S.node.node_name || ""} · ${S.node.node_id}` : "";
   const c = document.getElementById("conn"); c.replaceChildren($("span", {class: "dot " + (on ? "on" : "off")}), on ? `${S.username}${S.sysop ? " (sysop)" : ""}` : S.status);
@@ -176,7 +179,7 @@ const VIEWS = {
       rows = r.messages.map(m => $("div", {class: "row", on: {click: () => openThread({other: m.folder === "inbox" ? m.from : m.to, subject: baseSubject(m.subject), msgs: [m], last: m}, folder)}},
         $("span", {class: "n"}, ""), $("span", {class: "s"}, m.subject), $("span", {class: "m"}, `${m.folder === "sent" ? "to " + m.to : m.from} · ${when(m.created_at)}`)));
     }
-    const tabs2 = [...tabs, $("button", {class: "plain", on: {click: () => members()}}, "Members")];
+    const tabs2 = [...tabs, $("button", {class: "plain", on: {click: () => members()}}, "Address book")];
     return [panel(...tabs2, $("button", {class: "go", style: "float:right;margin-top:0", on: {click: () => compose({})}}, "New message")), panel(...(rows.length ? rows : [$("div", {class: "mute"}, folder === "inbox" ? "No mail yet." : "Empty.")]))];
   },
   async post(x) {
@@ -364,21 +367,25 @@ async function members() {
     const q = $("input", {placeholder: "search by name, username or callsign"}), list = $("div", {});
     const draw = () => list.replaceChildren(...memberList(d, q.value, u => compose({to: u.username}), 500));
     q.addEventListener("input", draw); draw();
-    main.replaceChildren(panel($("h3", {}, `Members on ${d.node} (${d.users.filter(u => !u.you).length})`),
+    main.replaceChildren(panel($("h3", {}, `Address book · ${d.node} (${d.users.filter(u => !u.you).length})`),
       $("div", {class: "mute"}, "Approved members you can send private mail to. Click someone to write to them."), q,
       $("button", {class: "plain", on: {click: () => render({folder: "inbox"})}}, "Back")), panel(list));
     q.focus();
   } catch (e) { main.replaceChildren(panel(errBox(e))); }
 }
 function compose(x) {
-  const to = $("input", {value: x.to || "", placeholder: "start typing a name, or user@NODE-ID"}), subject = $("input", {value: x.subject || "", maxlength: "80"}), body = $("textarea", {}), msg = $("div", {});
+  const to = $("input", {value: x.to || "", placeholder: "start typing a name, or user@NODE-ID", autocomplete: "off", spellcheck: "false"}), subject = $("input", {value: x.subject || "", maxlength: "80"}), body = $("textarea", {}), msg = $("div", {});
   const picks = $("div", {style: "max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:6px;margin-top:6px"});
   const pick = u => { to.value = u.username; picks.hidden = true; subject.focus(); };
-  const draw = () => { if (DIR && !to.value.includes("@")) { picks.hidden = false; picks.replaceChildren(...memberList(DIR, to.value, pick, 50)); } else picks.hidden = true; };
+  const draw = (all) => { if (DIR && (all === true || !to.value.includes("@"))) { picks.hidden = false; picks.replaceChildren(...memberList(DIR, all === true ? "" : to.value, pick, 500)); } else picks.hidden = true; };
+  const failed = e => { picks.hidden = false; picks.replaceChildren(errBox({message: "Couldn't load the address book: " + (e.message || e)})); };
   picks.hidden = true;
   to.addEventListener("input", draw); to.addEventListener("focus", draw);
-  if (!x.to) directory().then(draw).catch(() => {});
-  document.getElementById("main").replaceChildren(panel($("h3", {}, "New private message"), $("label", {}, "To"), to, picks, $("label", {}, "Subject"), subject, $("label", {}, "Message"), body,
+  if (!x.to) directory().then(draw).catch(failed);
+  const book = $("button", {class: "plain", style: "margin:0 0 0 8px;padding:2px 10px;font-size:13px", on: {click: () => {
+    if (!picks.hidden && !to.value) { picks.hidden = true; return; }
+    directory().then(() => { to.value = ""; draw(true); }).catch(failed); }}}, "Address book");
+  document.getElementById("main").replaceChildren(panel($("h3", {}, "New private message"), $("label", {}, "To", book), to, picks, $("label", {}, "Subject"), subject, $("label", {}, "Message"), body,
     $("div", {class: "mute"}, "Not end-to-end encrypted: sysops relaying it could read it. Don't send passwords."),
     $("button", {class: "go", on: {click: async () => { try { const a = {to: to.value.trim(), subject: subject.value.trim(), body: body.value}; if (x.reply_to) a.reply_to = x.reply_to; await call("mail_send", a); tab = "mail"; render({folder: "sent"}); } catch (e) { msg.replaceChildren(errBox(e)); } }}}, "Send"),
     $("button", {class: "plain", on: {click: () => render()}}, "Cancel"), msg));
