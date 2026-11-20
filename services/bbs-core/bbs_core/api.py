@@ -297,8 +297,9 @@ def create_app(bbs: BBS) -> FastAPI:
         return bbs.mail_list(who, folder, before, limit)
 
     @app.get("/v1/directory")
-    def directory(who: Who) -> dict:
-        return bbs.directory(who)
+    def directory(who: Who, q: str | None = Query(None, max_length=40), offset: Annotated[int, Query(ge=0)] = 0,
+                  limit: Annotated[int, Query(ge=1, le=2000)] = 2000) -> dict:
+        return bbs.directory(who, q, offset, limit)
 
     @app.get("/v1/mail/{pm_id}")
     def mail_get(pm_id: int, who: Who) -> dict:

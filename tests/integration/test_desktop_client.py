@@ -357,3 +357,31 @@ async def test_desktop_update_check(tmp_path, monkeypatch):
     app.update_checked = 0
     app._maybe_check_update()
     assert app._update_task is None                                  # automatic checks really off
+
+
+
+async def test_directory_search_and_paging_for_big_nodes(gateways, bbs, active_user):
+    ssh_port, _, _ = gateways
+    name, key, _ = active_user
+    with bbs.db.session() as conn:
+        for i in range(120):
+            conn.execute("INSERT INTO users(username, display_name, role, status, callsign, callsign_verified, created_at,"
+                         " updated_at) VALUES (?, ?, 'user', 'ACTIVE', ?, ?, '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')",
+                         (f"member{i:03d}", f"Member {i}", f"GM{i % 10}X{i:03d}"[:6], i % 2))
+        conn.execute("INSERT INTO users(username, display_name, role, status, created_at, updated_at)"
+                     " VALUES ('pct_user', '100% sure', 'user', 'ACTIVE', '2026-01-01T00:00:00Z', '2026-01-01T00:00:00Z')")
+    conn_, call = await client(ssh_port, name, key)
+    d = (await call("directory", limit=50))["data"]
+    assert d["total"] == 123 and len(d["users"]) == 50 and d["more"] is True
+    d2 = (await call("directory", limit=50, offset=100))["data"]
+    assert len(d2["users"]) == 23 and d2["more"] is False
+    assert not {u["username"] for u in d["users"]} & {u["username"] for u in d2["users"]}
+    hit = (await call("directory", q="Member 11", limit=50))["data"]          # display name
+    assert {u["username"] for u in hit["users"]} == {f"member{i:03d}" for i in (11, 110, 111, 112, 113, 114, 115, 116, 117, 118, 119)}
+    assert (await call("directory", q="ALI"))["data"]["users"][0]["username"] == "alice"   # username, any case
+    odd = (await call("directory", q="gm1x"))["data"]                         # only verified callsigns are searchable
+    assert odd["total"] >= 1 and all(u["callsign"] for u in odd["users"])
+    assert [u["username"] for u in (await call("directory", q="%"))["data"]["users"]] == ["pct_user"]   # no wildcards
+    assert (await call("directory", q="_"))["data"]["users"][0]["username"] == "pct_user"
+    assert (await call("directory", limit=0))["error"]["code"] == "bad_request"
+    conn_.close()

@@ -2,6 +2,16 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.9.2 - address book for big nodes
+
+* The address book is searched by the node and sent a page at a time, so it works with
+  thousands of members. `GET /v1/directory` takes `q` (name, username or verified
+  callsign), `offset` and `limit`, and returns `total` and `more`.
+* BeaconNet Desktop 1.4.2: **Address book** opens a pop-up window: search box, count,
+  scrolling list, *Show more*, Esc to close. Typing in *To* shows the top matches.
+* BBS: *Private Mail > M* (and `?` at the *To* prompt) asks what to search for, then
+  lists the matches 20 at a time.
+
 ## 1.9.1 - address book and version in the header
 
 * BeaconNet Desktop 1.4.1:

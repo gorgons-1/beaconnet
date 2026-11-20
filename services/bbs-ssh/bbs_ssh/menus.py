@@ -309,25 +309,33 @@ async def read_mail(t: Term, s: Session, pm_id: int) -> None:
 
 
 async def member_list(t: Term, s: Session, pick: bool = False) -> None:
-    try:
-        d = await s.get("/v1/directory")
-    except ApiError as exc:
-        return await _error(t, exc)
-    users = [u for u in d["users"] if not u["you"]]
-    t.title(f"Members on {d['node']} ({len(users)})")
-    if not users:
-        t.line("No other members yet.")
-    for i in range(0, len(users), 20):
-        for u in users[i:i + 20]:
+    """The node's address book, searched by the node and shown a page at a time."""
+    q = await t.ask("Search name, username or callsign (Enter = everyone): ", 40)
+    offset, shown, page = 0, 0, 20
+    while True:
+        try:
+            d = await s.get("/v1/directory", q=q or None, offset=offset, limit=page)
+        except ApiError as exc:
+            return await _error(t, exc)
+        if offset == 0:
+            t.title(f"Address book - {d['node']} ({d['total']}{' matching' if q else ''})")
+            if not d["users"]:
+                t.line("Nobody matches that." if q else "No members yet.")
+        for u in d["users"]:
+            if u["you"]:
+                continue
+            shown += 1
             extra = " ".join(x for x in (u["callsign"], "sysop" if u["sysop"] else "") if x)
             if t.narrow:
                 t.line(f" {c(u['username'])[:14]:<14} {c(u['display_name'] or '')[:t.width - 26]:<{t.width - 26}} {extra}"[:t.width - 1])
             else:
                 t.line(f"  {c(u['username'])[:20]:<20} {c(u['display_name'] or '')[:30]:<30} {extra}")
-        if i + 20 < len(users):
-            if (await t.readline("Enter=more, Q=stop: ", 2)).upper() == "Q":
-                break
-    if pick and users:
+        if not d["more"]:
+            break
+        offset += page
+        if (await t.readline("Enter=more, Q=stop: ", 2)).upper() == "Q":
+            break
+    if pick and shown:
         name = await t.ask("Write to (username, Enter=back): ", 64)
         if name:
             await compose_mail(t, s, to=name)

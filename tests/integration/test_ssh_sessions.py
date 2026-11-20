@@ -336,13 +336,17 @@ async def test_member_list_in_mail(gateways, admin_key, active_user, bbs):
     t.send("5")
     await t.expect("M=members")
     t.send("M")
+    await t.expect("Enter = everyone):")
+    t.send("ali")
     screen = await t.expect("Write to")
-    assert "alice" in screen and "Members on" in screen
+    assert "alice" in screen and "Address book" in screen and "(1 matching)" in screen
     t.send("")
     await t.expect("M=members")
     t.send("C")
     await t.expect("? for the member list")
     t.send("?")
+    await t.expect("Enter = everyone):")
+    t.send("")
     screen = await t.expect("? for the member list")
     assert "alice" in screen
     t.send("alice")
@@ -386,6 +390,8 @@ async def test_commodore_64_forty_columns(gateways, admin_key, active_user, ssh_
     t.send("5")
     await t.expect("Q=back:")
     t.send("M")
+    await t.expect("everyone):")
+    t.send("")
     await t.expect("Enter=back):")
     t.send("")
     await t.expect("Q=back:")

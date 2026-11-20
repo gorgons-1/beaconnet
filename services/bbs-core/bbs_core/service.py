@@ -891,15 +891,27 @@ class BBS:
         event(log, "mail_sent", sender=who.username, recipient=rcpt["username"], id=cur.lastrowid)
         return {"id": cur.lastrowid, "to": rcpt["username"], "delivery_state": "DELIVERED"}
 
-    def directory(self, who: Principal) -> dict:
-        """Members you can send private mail to on this node: approved accounts only.
-        Contact details are never listed, and a callsign shows only once a sysop verified it."""
+    DIRECTORY_MAX = 2000
+
+    def directory(self, who: Principal, q: str | None = None, offset: int = 0, limit: int = DIRECTORY_MAX) -> dict:
+        """Members you can send private mail to on this node: approved accounts only, searched
+        here so a node with thousands of users sends a page at a time. Contact details are
+        never listed, and a callsign shows (and is searchable) only once a sysop verified it."""
         self._need_active(who, "the member list")
+        limit, offset = max(1, min(limit, self.DIRECTORY_MAX)), max(0, offset)
+        where, params = "status = 'ACTIVE'", []
+        q = sanitize_line(q or "", 40).strip().lower()
+        if q:
+            like = "%" + q.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            where += (" AND (lower(username) LIKE ? ESCAPE '\\' OR lower(coalesce(display_name, '')) LIKE ? ESCAPE '\\'"
+                      " OR (callsign_verified = 1 AND lower(callsign) LIKE ? ESCAPE '\\'))")
+            params = [like, like, like]
         with self.db.session() as conn:
+            total = conn.execute(f"SELECT COUNT(*) FROM users WHERE {where}", params).fetchone()[0]
             rows = conn.execute(
                 "SELECT username, display_name, CASE WHEN callsign_verified = 1 THEN callsign END AS callsign, role"
-                " FROM users WHERE status = 'ACTIVE' ORDER BY username LIMIT 2000").fetchall()
-        return {"node": self.cfg.node.id,
+                f" FROM users WHERE {where} ORDER BY username LIMIT ? OFFSET ?", (*params, limit, offset)).fetchall()
+        return {"node": self.cfg.node.id, "total": total, "offset": offset, "more": offset + len(rows) < total,
                 "users": [{"username": r["username"], "display_name": r["display_name"], "callsign": r["callsign"],
                            "sysop": r["role"] == "admin", "you": r["username"] == who.username} for r in rows]}
 
