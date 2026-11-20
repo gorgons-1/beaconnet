@@ -2,6 +2,12 @@
 
 Releases are git tags (`vX.Y.Z`). Nodes update with `sudo scripts/update.sh`.
 
+## 1.9.6 - updates offered in Settings
+
+* BeaconNet Desktop 1.4.6: a new version is offered inside **Settings > App updates**
+  (Update now / What's new / Not now) instead of a banner across the top of every page.
+  The header still shows "vX.Y.Z available"; click it to go there.
+
 ## 1.9.5 - a bell for new mail
 
 * BeaconNet Desktop 1.4.5: a bell rings when new private mail arrives (once per check,

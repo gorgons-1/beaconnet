@@ -16,7 +16,7 @@ nav button.sel{background:var(--accent);color:var(--accent-ink);border-color:var
 .modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;z-index:20}
 .dlg{width:min(640px,100%);max-height:calc(100vh - 80px);display:flex;flex-direction:column;margin:0}.dlist{overflow:auto;flex:1;min-height:120px;margin-top:8px;border:1px solid var(--line);border-radius:6px}.row.me{cursor:default;opacity:.6}
 .msg{border-top:1px solid var(--line);padding-top:8px;margin-top:10px}.msg pre{margin:6px 0 4px}
-#upd .panel{max-width:948px;margin:10px auto;border-color:var(--accent)}#upd .panel b{color:var(--accent)}
+.offer{border:1px solid var(--accent);border-radius:6px;padding:10px 12px;margin:10px 0}.offer b{color:var(--accent)}header .ver.new{cursor:pointer;text-decoration:underline}
 main{max-width:980px;margin:0 auto;padding:8px 16px 40px}.panel{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px;margin:10px 0}
 .row{display:flex;gap:10px;align-items:baseline;padding:8px 6px;border-bottom:1px solid var(--line);cursor:pointer}.row:last-child{border-bottom:0}.row:hover{background:color-mix(in srgb,var(--accent) 7%,transparent)}
 .row .n{color:var(--mute);font-variant-numeric:tabular-nums;min-width:48px}.row .s{flex:1;min-width:0;overflow-wrap:anywhere}.row .m{color:var(--mute);font-size:13px;white-space:nowrap}
@@ -33,12 +33,11 @@ button.plain{background:none;border:1px solid var(--line);color:var(--ink);borde
 <body>
 <header><h1>BEACONNET</h1><span class="ver" id="ver"></span><span class="node" id="node"></span><span style="flex:1"></span><span id="conn" class="mute"><span class="dot"></span>…</span></header>
 <nav id="tabs"></nav>
-<div id="upd"></div>
 <main id="main"></main>
 <script>
 "use strict";
 const TOKEN = "__TOKEN__";
-let S = {status: "loading", events: []}, tab = "news", since = 0, news = [], lastOpen = null, updating = null;
+let S = {status: "loading", events: []}, tab = "news", since = 0, news = [], lastOpen = null, updating = null, updateErr = null;
 const $ = (t, a = {}, ...kids) => { const e = document.createElement(t); for (const [k, v] of Object.entries(a)) { if (k === "on") for (const [ev, f] of Object.entries(v)) e.addEventListener(ev, f); else if (k === "class") e.className = v; else e.setAttribute(k, v); } for (const c of kids) e.append(c instanceof Node ? c : document.createTextNode(c ?? "")); return e; };
 async function api(path, data = {}) {
   const r = await fetch(path, {method: "POST", headers: {"Content-Type": "application/json", "X-BeaconNet-Token": TOKEN}, body: JSON.stringify(data)});
@@ -113,36 +112,38 @@ async function openThread(t, folder = "inbox") {
     poll();
   } catch (e) { main.replaceChildren(panel(errBox(e))); }
 }
-function updateBanner() {
-  const u = S.update, box = document.getElementById("upd");
-  if (updating) { box.replaceChildren(panel(...updating)); return; }
-  if (!u || u.skipped) { box.replaceChildren(); return; }
+function updateOffer() {
+  // Shown inside Settings > App updates (the header says "vX available" and links there).
+  const box = document.getElementById("upd-offer"), u = S.update;
+  if (!box) return;
+  if (updating) { box.replaceChildren($("div", {class: "offer"}, ...updating)); return; }
+  if (!u) { box.replaceChildren(); return; }
   const now = async () => {
+    updateErr = null;
     updating = [$("b", {}, `Updating to BeaconNet Desktop ${u.version}…`), " ", $("span", {class: "mute"}, "Downloading and checking it. This can take a minute.")];
     head();
     try {
       await api("/api/update/install");
       updating = [$("b", {}, "Restarting BeaconNet…"), " ", $("span", {class: "mute"}, `This page reloads by itself when ${u.version} is running. If it hasn't within a minute, open BeaconNet again.`)];
-    } catch (e) {
-      updating = null; head();
-      box.append(panel(errBox(e)));
-      return;
-    }
+    } catch (e) { updating = null; updateErr = e; }
     head();
   };
-  box.replaceChildren(panel($("b", {}, `Update available: BeaconNet Desktop ${u.version}`), ` (you have ${S.version}). `,
+  box.replaceChildren($("div", {class: "offer"}, $("b", {}, `Update available: BeaconNet Desktop ${u.version}`), ` (you have ${S.version}). `,
     $("span", {class: "mute"}, u.can_install ? "BeaconNet downloads it, checks it, swaps itself and reopens. Your login and settings are kept."
                                              : "Download it, quit BeaconNet from the tray icon, then open the new one. Your login and settings are kept."), $("br"),
     u.can_install ? $("button", {class: "go", on: {click: now}}, "Update now")
                   : $("button", {class: "go", on: {click: () => api("/api/update/open", {what: "download"})}}, "Download update"), " ",
     $("button", {class: "plain", on: {click: () => api("/api/update/open", {what: "notes"})}}, "What's new"),
-    $("button", {class: "plain", on: {click: async () => { await api("/api/update/skip"); await poll(); }}}, "Not now")));
+    u.skipped ? "" : $("button", {class: "plain", title: "Stop highlighting this version in the header", on: {click: async () => { await api("/api/update/skip"); await poll(); }}}, "Not now"),
+    updateErr ? errBox(updateErr) : ""));
 }
 function head() {
-  updateBanner();
+  updateOffer();
   const ver = document.getElementById("ver"), newer = S.update && !S.update.skipped;
   ver.textContent = S.version ? `v${S.version}` + (newer ? ` · v${S.update.version} available` : "") : "";
   ver.className = "ver" + (newer ? " new" : "");
+  ver.title = newer ? "Open Settings to update" : "";
+  ver.onclick = newer ? () => { tab = "settings"; head(); render(); } : null;
   const on = S.status === "connected";
   document.getElementById("node").textContent = S.node && S.node.node_id ? `${S.node.node_name || ""} · ${S.node.node_id}` : "";
   const c = document.getElementById("conn"); c.replaceChildren($("span", {class: "dot " + (on ? "on" : "off")}), on ? `${S.username}${S.sysop ? " (sysop)" : ""}` : S.status);
@@ -161,7 +162,7 @@ function head() {
 }
 async function render(x) {
   const m = document.getElementById("main");
-  try { m.replaceChildren(...await VIEWS[tab](x)); } catch (e) { m.replaceChildren(panel(errBox(e))); }
+  try { m.replaceChildren(...await VIEWS[tab](x)); updateOffer(); } catch (e) { m.replaceChildren(panel(errBox(e))); }
 }
 function bulletinRow(b) {
   return $("div", {class: "row" + (b.read === false ? " unread" : ""), on: {click: () => openMsg(b.number)}},
@@ -301,10 +302,11 @@ function updateSettings() {
   const now = $("button", {class: "plain", on: {click: async () => {
     msg.replaceChildren($("span", {class: "mute"}, "Checking…"));
     try { S = {...S, ...await api("/api/update/check")}; head();
-      msg.replaceChildren(S.update_error ? errBox({message: S.update_error}) : S.update ? `BeaconNet Desktop ${S.update.version} is available - see the banner at the top.` : "You have the latest version.");
+      msg.replaceChildren(S.update_error ? errBox({message: S.update_error}) : S.update ? "" : "You have the latest version.");
     } catch (e) { msg.replaceChildren(errBox(e)); }
   }}}, "Check now");
   return panel($("h3", {}, "App updates"), $("div", {}, `BeaconNet Desktop ${S.version}`, S.update_checked ? $("span", {class: "mute"}, ` · last checked ${S.update_checked}`) : ""),
+    $("div", {id: "upd-offer"}),
     $("label", {class: "chk"}, auto, "Check for updates automatically (asks GitHub twice a day; nothing about you is sent)"), now, msg);
 }
 function radioSettings() {

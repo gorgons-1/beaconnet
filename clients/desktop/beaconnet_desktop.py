@@ -45,7 +45,7 @@ try:
 except ImportError:  # pragma: no cover - the launchers install it
     sys.exit("BeaconNet Desktop needs the 'asyncssh' package:  python -m pip install --user asyncssh")
 
-VERSION = "1.4.5"
+VERSION = "1.4.6"
 SUBSYSTEM = "beaconnet-client"
 POLL_SECONDS = 30
 INFO_REFRESH_CHECKS = 10            # re-read node name/id every ~5 minutes

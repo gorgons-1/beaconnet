@@ -81,14 +81,15 @@ button next to **To** on a new message. The header shows your app version (e.g. 
 ## Updates
 
 The app checks GitHub twice a day (it asks only "what's the latest version?" and sends
-nothing about you). When there's a newer version, a banner offers **Update now**:
+nothing about you). When there's a newer version, the header shows "vX.Y.Z available" (click it) and
+**Settings > App updates** offers **Update now**:
 BeaconNet downloads it, checks it against the release's `BeaconNet-SHA256SUMS.txt`, swaps
 itself and reopens on its own. The page reloads by itself. Your login and settings are kept,
 and the previous copy is removed on the next start.
 
 **Update now** needs to be able to write to the folder the app is in. On macOS, move
 BeaconNet to Applications first (an app opened straight from Downloads is read-only). If the
-app can't update itself, or you run it from the Python source, the banner offers
+app can't update itself, or you run it from the Python source, **Settings > App updates** offers
 **Download update** instead: quit BeaconNet from the tray icon, then open the new one.
 **Not now** hides that version; **Settings > App updates** has **Check now** and can turn
 automatic checks off. Updating in the app works from 1.4.4 on; to get 1.4.4, download it
